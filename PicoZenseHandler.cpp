@@ -5,18 +5,22 @@ using namespace cv;
 using namespace pcl;
 using namespace Eigen;
 
-PicoZenseHandler::PicoZenseHandler(/* args */)
+static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
+static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
+static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer);
+
+PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 {
     debug("PicoZense object created");
-    m_visualizer = new pcl::visualization::PCLVisualizer("PointCloud Viewrer");
+    m_visualizer = InitializeInterations();
+    // m_visualizer = new pcl::visualization::PCLVisualizer("PointCloud Viewrer");
     m_visualizer->setBackgroundColor(0.0, 0.0, 0.0);
     // m_visualizer->registerKeyboardCallback(&PicoZenseHandler::keyboardEventHandler, *m_visualizer);
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
-    debug("RangeImage ptr address is ", rangeImage);
 
-    m_devIndex = 0;
+    m_devIndex = devIndex;
 }
 
 
@@ -35,7 +39,7 @@ PicoZenseHandler::~PicoZenseHandler()
     if (m_visualizer != nullptr)
     {
         m_visualizer = nullptr;
-        delete m_visualizer;
+        // delete m_visualizer;
     }
     if (rangeImage != nullptr)
     {
@@ -50,7 +54,6 @@ PicoZenseHandler::~PicoZenseHandler()
 void PicoZenseHandler::Visualize()
 {
     PsReturnStatus status;
-    int32_t deviceIndex = 0;
     int32_t deviceCount = 0;
     uint32_t slope = 1450;
     uint32_t wdrSlope = 4400;
@@ -74,13 +77,13 @@ void PicoZenseHandler::Visualize()
     std::cout << "Get device count: " << std::to_string(deviceCount) << std::endl;
 
     //Set the Depth Range to Near through PsSetDepthRange interface
-    status = PsSetDepthRange(deviceIndex, depthRange);
+    status = PsSetDepthRange(m_deviceIndex, depthRange);
     if (status != PsReturnStatus::PsRetOK)
         std::cout << "PsSetDepthRange failed!\n";
     else
         std::cout << "Set Depth Range to Near\n";
 
-    status = PsOpenDevice(deviceIndex);
+    status = PsOpenDevice(m_deviceIndex);
     if (status != PsReturnStatus::PsRetOK)
     {
         std::cout << "OpenDevice failed!\n";
@@ -89,10 +92,10 @@ void PicoZenseHandler::Visualize()
     }
 
     //Set PixelFormat as PsPixelFormatBGR888 for opencv display
-    PsSetColorPixelFormat(deviceIndex, PsPixelFormatRGB888);
+    PsSetColorPixelFormat(m_deviceIndex, PsPixelFormatRGB888);
 
     //Set to data mode
-    status = PsSetDataMode(deviceIndex, (PsDataMode)dataMode);
+    status = PsSetDataMode(m_deviceIndex, (PsDataMode)dataMode);
     if (status != PsReturnStatus::PsRetOK)
     {
         std::cout << "Set DataMode Failed failed!\n";
@@ -102,72 +105,30 @@ void PicoZenseHandler::Visualize()
     //Set WDR Output Mode, three ranges Near/Middle/Far output from device every one frame
     // PsWDROutputMode wdrMode = { PsWDRTotalRange_Three, PsNearRange, 1, PsMidRange, 1, PsNearRange, 1 };
     //Set WDR fusion threshold
-    // PsSetWDRFusionThreshold(deviceIndex, 1000, 2000);
-    // PsSetWDROutputMode(deviceIndex, &wdrMode);
-    // PsSetWDRStyle(deviceIndex, PsWDR_ALTERNATION);
+    // PsSetWDRFusionThreshold(m_deviceIndex, 1000, 2000);
+    // PsSetWDROutputMode(m_deviceIndex, &wdrMode);
+    // PsSetWDRStyle(m_deviceIndex, PsWDR_ALTERNATION);
 
     //Enable the Depth and RGB synchronize feature
-    PsSetSynchronizeEnabled(deviceIndex, true);
-    status = PsSetMapperEnabledDepthToRGB(deviceIndex, true);
+    // PsSetSynchronizeEnabled(m_deviceIndex, true);
+    // status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
 
-    PsCameraParameters cameraParameters;
-    status = PsGetCameraParameters(deviceIndex, PsDepthSensor, &cameraParameters);
-    info("Get PsGetCameraParameters PsDepthSensor status: ", PsStatusToString(status));
-    info("Depth Camera Intinsic:\n", "Fx: ", std::to_string(cameraParameters.fx), "\n",
-         "Cx: ", std::to_string(cameraParameters.cx), "\n",
-         "Fy: ", std::to_string(cameraParameters.fy), "\n",
-         "Cy: ", std::to_string(cameraParameters.cy), "\n",
-         "Depth Distortion Coefficient: \n",
-         "K1: ", std::to_string(cameraParameters.k1), "\n",
-         "K2: ", std::to_string(cameraParameters.k2), "\n",
-         "P1: ", std::to_string(cameraParameters.p1), "\n",
-         "P2: ", std::to_string(cameraParameters.p2), "\n",
-         "K3: ", std::to_string(cameraParameters.k3), "\n",
-         "K4: ", std::to_string(cameraParameters.k4), "\n",
-         "K5: ", std::to_string(cameraParameters.k5), "\n",
-         "K6: ", std::to_string(cameraParameters.k6));
+    PsCameraParameters depthCameraParameters;
+    status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &depthCameraParameters);
+    if (status != PsRetOK)
+        debug("PsGetCameraParameters for depth sensor failed with error ", PsStatusToString(status));
 
-    status = PsGetCameraParameters(deviceIndex, PsRgbSensor, &cameraParameters);
-    info("Get PsGetCameraParameters PsRgbSensor status: ", PsStatusToString(status));
-    info("RGB Camera Intinsic: \n",
-         "Fx: ", std::to_string(cameraParameters.fx), "\n",
-         "Cx: ", std::to_string(cameraParameters.cx), "\n",
-         "Fy: ", std::to_string(cameraParameters.fy), "\n",
-         "Cy: ", std::to_string(cameraParameters.cy), "\n",
-         "RGB Distortion Coefficient: \n",
-         "K1: ", std::to_string(cameraParameters.k1), "\n",
-         "K2: ", std::to_string(cameraParameters.k2), "\n",
-         "P1: ", std::to_string(cameraParameters.p1), "\n",
-         "P2: ", std::to_string(cameraParameters.p2), "\n",
-         "K3: ", std::to_string(cameraParameters.k3), "\n");
-
+    PsCameraParameters rgbCameraParameters;
+    status = PsGetCameraParameters(m_deviceIndex, PsRgbSensor, &rgbCameraParameters);
+    if (status != PsRetOK)
+        debug("PsGetCameraParameters for RGB sensor failed with error ", PsStatusToString(status));
 
     PsCameraExtrinsicParameters CameraExtrinsicParameters;
-    status = PsGetCameraExtrinsicParameters(deviceIndex, &CameraExtrinsicParameters);
-
-    info("Get PsGetCameraExtrinsicParameters status: ", PsStatusToString(status));
-    info("Camera rotation: \n",
-         std::to_string(CameraExtrinsicParameters.rotation[0]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[4]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[5]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[6]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[7]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[8]), " ",
-         "Camera transfer: \n",
-         std::to_string(CameraExtrinsicParameters.translation[0]), " ",
-         std::to_string(CameraExtrinsicParameters.translation[1]), " ",
-         std::to_string(CameraExtrinsicParameters.translation[2]));
+    status = PsGetCameraExtrinsicParameters(m_deviceIndex, &CameraExtrinsicParameters);
+    if (status != PsRetOK)
+        debug("PsGetCameraExtrinsicParameters failed with error ", PsStatusToString(status));
 
     cv::Mat imageMat;
-    const string irImageWindow = "IR Image";
-    const string rgbImageWindow = "RGB Image";
-    const string depthImageWindow = "Depth Image";
-    const string mappedDepthImageWindow = "MappedDepth Image";
-    const string mappedRgbImageWindow = "MappedRGB Image";
-    const string mappedIRWindow = "MappedIR Image";
-    const string wdrDepthImageWindow = "WDR Depth Image";
-
-    ofstream PointCloudWriter;
 
     bool f_bDistortionCorrection = false;
     bool f_bFilter = false;
@@ -186,21 +147,21 @@ void PicoZenseHandler::Visualize()
         PsFrame mappedRGBFrame = {0};
 
         // Read one frame before call PsGetFrame
-        status = PsReadNextFrame(deviceIndex);
+        status = PsReadNextFrame(m_deviceIndex);
         if (status != PsRetOK)
             warn("PsReadNextFrame gave ", PsStatusToString(status));
 
         //Get depth frame, depth frame only output in following data mode
         if (dataMode == PsDepthAndRGB_30 || dataMode == PsDepthAndIR_30 || dataMode == PsDepthAndIRAndRGB_30 || dataMode == PsDepthAndIR_15_RGB_30)
         {
-            PsGetFrame(deviceIndex, PsDepthFrame, &depthFrame);
+            PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
 
             if (depthFrame.pFrameData != NULL)
             {
                 //Display the Depth Image
 
                 //Generate and display PointCloud
-                // PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, cameraParameters);
+                // PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
             }
         }
 
@@ -208,11 +169,11 @@ void PicoZenseHandler::Visualize()
         //WDR depth frame only output in PsWDR_Depth data mode
         if (dataMode == PsWDR_Depth)
         {
-            PsGetFrame(deviceIndex, PsWDRDepthFrame, &wdrDepthFrame);
+            PsGetFrame(m_deviceIndex, PsWDRDepthFrame, &wdrDepthFrame);
             if (wdrDepthFrame.pFrameData != NULL)
             {
                 //Display the WDR Depth Image
-                // PointCloudCreatorXYZ(wdrDepthFrame.height, wdrDepthFrame.width, imageMatrix, wdrDepthFrame.pFrameData, cameraParameters);
+                PointCloudCreatorXYZ(wdrDepthFrame.height, wdrDepthFrame.width, imageMatrix, wdrDepthFrame.pFrameData, depthCameraParameters);
             }
         }
 
@@ -221,22 +182,82 @@ void PicoZenseHandler::Visualize()
         //And can only get when the feature is enabled through api PsSetMapperEnabledDepthToRGB
         if (dataMode == PsDepthAndRGB_30 || dataMode == PsDepthAndIRAndRGB_30 || dataMode == PsWDR_Depth || dataMode == PsDepthAndIR_15_RGB_30)
         {
-            PsGetFrame(deviceIndex, PsMappedRGBFrame, &mappedRGBFrame);
+            PsGetFrame(m_deviceIndex, PsMappedRGBFrame, &mappedRGBFrame);
 
             if (mappedRGBFrame.pFrameData != NULL)
             {
-                PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, cameraParameters);
+                PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters);
             }
         }
     }
 
-    status = PsCloseDevice(deviceIndex);
+    status = PsCloseDevice(m_deviceIndex);
     info("CloseDevice status: ", status);
 
     status = PsShutdown();
     info("Shutdown status: ", status);
     cv::destroyAllWindows();
 }
+
+void PicoZenseHandler::PrintCameraParameters()
+{
+    PsCameraParameters cameraParameters;
+    PsReturnStatus status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &cameraParameters);
+    info("Get PsGetCameraParameters PsDepthSensor status: ", PsStatusToString(status));
+    info("Depth Camera Intinsic:\n", "Fx: ", std::to_string(cameraParameters.fx), "\n",
+         "Cx: ", std::to_string(cameraParameters.cx), "\n",
+         "Fy: ", std::to_string(cameraParameters.fy), "\n",
+         "Cy: ", std::to_string(cameraParameters.cy), "\n",
+         "Depth Distortion Coefficient: \n",
+         "K1: ", std::to_string(cameraParameters.k1), "\n",
+         "K2: ", std::to_string(cameraParameters.k2), "\n",
+         "P1: ", std::to_string(cameraParameters.p1), "\n",
+         "P2: ", std::to_string(cameraParameters.p2), "\n",
+         "K3: ", std::to_string(cameraParameters.k3), "\n",
+         "K4: ", std::to_string(cameraParameters.k4), "\n",
+         "K5: ", std::to_string(cameraParameters.k5), "\n",
+         "K6: ", std::to_string(cameraParameters.k6));
+
+    status = PsGetCameraParameters(m_deviceIndex, PsRgbSensor, &cameraParameters);
+    info("Get PsGetCameraParameters PsRgbSensor status: ", PsStatusToString(status));
+    info("RGB Camera Intinsic: \n",
+         "Fx: ", std::to_string(cameraParameters.fx), "\n",
+         "Cx: ", std::to_string(cameraParameters.cx), "\n",
+         "Fy: ", std::to_string(cameraParameters.fy), "\n",
+         "Cy: ", std::to_string(cameraParameters.cy), "\n",
+         "RGB Distortion Coefficient: \n",
+         "K1: ", std::to_string(cameraParameters.k1), "\n",
+         "K2: ", std::to_string(cameraParameters.k2), "\n",
+         "P1: ", std::to_string(cameraParameters.p1), "\n",
+         "P2: ", std::to_string(cameraParameters.p2), "\n",
+         "K3: ", std::to_string(cameraParameters.k3), "\n");
+
+    PsCameraExtrinsicParameters CameraExtrinsicParameters;
+    status = PsGetCameraExtrinsicParameters(m_deviceIndex, &CameraExtrinsicParameters);
+
+    info("Get PsGetCameraExtrinsicParameters status: ", PsStatusToString(status));
+    info("Camera rotation: \n",
+         std::to_string(CameraExtrinsicParameters.rotation[0]), " ",
+         std::to_string(CameraExtrinsicParameters.rotation[4]), " ",
+         std::to_string(CameraExtrinsicParameters.rotation[5]), " ",
+         std::to_string(CameraExtrinsicParameters.rotation[6]), " ",
+         std::to_string(CameraExtrinsicParameters.rotation[7]), " ",
+         std::to_string(CameraExtrinsicParameters.rotation[8]), " ",
+         "Camera transfer: \n",
+         std::to_string(CameraExtrinsicParameters.translation[0]), " ",
+         std::to_string(CameraExtrinsicParameters.translation[1]), " ",
+         std::to_string(CameraExtrinsicParameters.translation[2]));
+}
+
+int PicoZenseHandler::SavePCD(const std::string &filename)
+{
+    pcl::PCDWriter w;
+    debug("Going to write");
+    int ret = w.write(filename, *pointCloud);
+    return ret;
+}
+
+/*  Private Functions  */
 
 std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
 {
@@ -300,12 +321,17 @@ std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
     return ret;
 }
 
-int PicoZenseHandler::SavePCD(const std::string &filename)
+
+pcl::visualization::PCLVisualizer::Ptr PicoZenseHandler::InitializeInterations()
 {
-    pcl::PCDWriter w;
-    debug("Going to write");
-    int ret = w.write(filename, *pointCloud);
-    return ret;
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
+    viewer->setBackgroundColor(0, 0, 0);
+
+    viewer->registerKeyboardCallback(keyboardEventHandler, (void *)this);
+    viewer->registerMouseCallback(mouseEventHandler, (void *)this);
+    viewer->registerPointPickingCallback(pointEventHandler, (void *)m_visualizer.get());
+
+    return (viewer);
 }
 
 void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params)
@@ -323,10 +349,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     m_visualizer->removeText3D("p");
     m_visualizer->removePointCloud("PointCloud");
     pointCloudRGB->clear();
-
-    pointCloudRGB->width = p_imageDepth.cols;
-    pointCloudRGB->height = p_imageDepth.rows;
-    pointCloudRGB->resize(pointCloudRGB->width * pointCloudRGB->height);
 
     //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
     // It has be done a rotation around the z azis
@@ -374,6 +396,9 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         }
     }
 
+    pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
+    pointCloudRGB->height = 1;
+
     m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
     m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
@@ -408,9 +433,9 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     PointXYZ pToVisualize;
     int zeroP = 0;
     int nonZeroP = 0;
-    for (int v = 0; v < p_image.rows; v += 4)
+    for (int v = 0; v < p_image.rows; v += 1)
     {
-        for (int u = 0; u < p_image.cols; u += 4)
+        for (int u = 0; u < p_image.cols; u += 1)
         {
             if (p_image.at<float>(v, u) == 0)
             {
@@ -441,7 +466,11 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
 
     m_visualizer->addPointCloud(pointCloud, "PointCloud");
 
-    // ISSCornerDetection();
+    pointCloud->width = (uint32_t)pointCloud->points.size();
+    pointCloud->height = 1;
+
+    // Invoke a corner detection method
+    // NARFCorenerDetection();
 
     m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
@@ -538,31 +567,25 @@ void PicoZenseHandler::CreateRangeImage()
     rangeImage->setUnseenToMaxRange();
 }
 
-// void PicoZenseHandler::mouseEventHandler(const pcl::visualization::MouseEvent &event, void *viewer_void)
-// {
-//     if (event.getButton() == pcl::visualization::MouseEvent::LeftButton &&
-//         event.getType() == pcl::visualization::MouseEvent::MouseButtonRelease)
-//     {
-//         std::cout << "Left mouse button released at position (" << event.getX() << ", " << event.getY() << ")" << std::endl;
+static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico)
+{
+    // std::cout << "Mouse: button" << std::to_string(event.getButton()) << " type -> " << event.getType() << std::endl;
+}
 
-//         char str[512];
-//         // sprintf(str, "text#%03d", text_id++);
-//         // viewer->addText("clicked here", event.getX(), event.getY(), str);
-//     }
-// }
+static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void *pico)
+{
+    PicoZenseHandler* picoHandler = static_cast<PicoZenseHandler *>(pico);
+    std::cout << "Keyboard: key -> " << event.getKeySym() << std::endl;
+    if (event.getKeySym() == "p" && event.keyUp())
+    {
+        picoHandler->PrintCameraParameters();
+    }
+}
 
-// void PicoZenseHandler::keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void *viewer_void)
-// {
-//     if (event.getKeySym() == "r" && event.keyDown())
-//     {
-//         std::cout << "r was pressed => removing all text" << std::endl;
-
-//         char str[512];
-//         // for (unsigned int i = 0; i < text_id; ++i)
-//         // {
-//         //     sprintf(str, "text#%03d", i);
-//         //     viewer->removeShape(str);
-//         // }
-//         // text_id = 0;
-//     }
-// }
+static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer)
+{
+    pcl::visualization::PCLVisualizer *v = static_cast<pcl::visualization::PCLVisualizer *>(viewer);
+    float x, y, z;
+    event.getPoint(x, y, z);
+    std::cout << "Point [" << std::to_string(x) << ";" << std::to_string(y) << ";" << std::to_string(z) << "]" << std::endl;
+}

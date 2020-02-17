@@ -41,13 +41,13 @@ using namespace cv;
 class PicoZenseHandler
 {
 public:
-    explicit PicoZenseHandler(/* args */);
+    explicit PicoZenseHandler(int32_t devIndex);
     ~PicoZenseHandler();
 
     void Visualize();
     int SavePCD(const std::string &filename);
-    // void mouseEventHandler(const pcl::visualization::MouseEvent &event);
-    // void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event);
+    pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
+    void PrintCameraParameters();
 
 private:
     //Private functions
@@ -82,13 +82,13 @@ private:
     //Provate members
     int32_t m_devIndex;
     pcl::visualization::CloudViewer *m_viewer = nullptr;
-    pcl::visualization::PCLVisualizer *m_visualizer;
+    pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
     cv::Mat imageMatrix;
     cv::Mat imageMatrixRGB;
     PointCloud<PointXYZ>::Ptr pointCloud = nullptr;
     PointCloud<PointXYZRGB>::Ptr pointCloudRGB = nullptr;
     pcl::RangeImage::Ptr rangeImage = nullptr;
-    // uint8_t tmp = 0;
+    int32_t m_deviceIndex;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H
