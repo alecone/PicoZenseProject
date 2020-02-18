@@ -89,6 +89,8 @@ private:
     PointCloud<PointXYZRGB>::Ptr pointCloudRGB = nullptr;
     pcl::RangeImage::Ptr rangeImage = nullptr;
     int32_t m_deviceIndex;
+    PsDepthRange depthRange;
+    int32_t dataMode;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H

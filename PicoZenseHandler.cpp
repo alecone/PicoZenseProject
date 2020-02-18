@@ -13,14 +13,14 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 {
     debug("PicoZense object created");
     m_visualizer = InitializeInterations();
-    // m_visualizer = new pcl::visualization::PCLVisualizer("PointCloud Viewrer");
     m_visualizer->setBackgroundColor(0.0, 0.0, 0.0);
-    // m_visualizer->registerKeyboardCallback(&PicoZenseHandler::keyboardEventHandler, *m_visualizer);
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
 
     m_devIndex = devIndex;
+    depthRange = PsNearRange;
+    dataMode = PsWDR_Depth;
 }
 
 
@@ -57,8 +57,7 @@ void PicoZenseHandler::Visualize()
     int32_t deviceCount = 0;
     uint32_t slope = 1450;
     uint32_t wdrSlope = 4400;
-    PsDepthRange depthRange = PsNearRange;
-    int32_t dataMode = PsWDR_Depth;
+
     status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
     {
@@ -70,23 +69,22 @@ void PicoZenseHandler::Visualize()
     status = PsGetDeviceCount(&deviceCount);
     if (status != PsReturnStatus::PsRetOK)
     {
-        std::cout << "PsGetDeviceCount failed!\n";
+        error("PsGetDeviceCount failed!");
         system("pause");
         return;
     }
-    std::cout << "Get device count: " << std::to_string(deviceCount) << std::endl;
 
     //Set the Depth Range to Near through PsSetDepthRange interface
     status = PsSetDepthRange(m_deviceIndex, depthRange);
     if (status != PsReturnStatus::PsRetOK)
-        std::cout << "PsSetDepthRange failed!\n";
+        error("PsSetDepthRange failed!");
     else
-        std::cout << "Set Depth Range to Near\n";
+        debug("Set Depth Range to Near");
 
     status = PsOpenDevice(m_deviceIndex);
     if (status != PsReturnStatus::PsRetOK)
     {
-        std::cout << "OpenDevice failed!\n";
+        error("OpenDevice failed!");
         system("pause");
         return;
     }
@@ -346,8 +344,7 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         error("Images with different sizes!!!");
         return;
     }
-    m_visualizer->removeText3D("p");
-    m_visualizer->removePointCloud("PointCloud");
+    // m_visualizer->removeText3D("p");
     pointCloudRGB->clear();
 
     //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
@@ -399,8 +396,10 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
     pointCloudRGB->height = 1;
 
-    m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
-    m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
+    if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloudRGB"))
+        m_visualizer->addPointCloud(pointCloudRGB, "PointCloudRGB");
+    
+    // m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
 }
 
@@ -412,14 +411,8 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         error("No depth data");
 
     //Dimension must be initialized to use 2-D indexing
-    m_visualizer->removeText3D("p");
-    m_visualizer->removeAllPointClouds();
+    // m_visualizer->removeText3D("p");
     pointCloud->clear();
-
-
-    // pointCloud->width = p_image.cols;
-    // pointCloud->height = p_image.rows;
-    // pointCloud->resize(pointCloud->width * pointCloud->height);
 
     //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
     // It has be done a rotation around the z azis
@@ -464,7 +457,8 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         }
     }
 
-    m_visualizer->addPointCloud(pointCloud, "PointCloud");
+    if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
+        m_visualizer->addPointCloud(pointCloud, "PointCloud");
 
     pointCloud->width = (uint32_t)pointCloud->points.size();
     pointCloud->height = 1;
@@ -472,7 +466,7 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     // Invoke a corner detection method
     // NARFCorenerDetection();
 
-    m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
+    // m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
 }
 
