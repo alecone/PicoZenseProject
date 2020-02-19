@@ -47,7 +47,28 @@ public:
     void Visualize();
     int SavePCD(const std::string &filename);
     pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
-    void PrintCameraParameters();
+
+    // Getters PicoZense Params
+    void GetCameraParameters();
+    void GetImu();
+
+    // Setters PicoZense Params
+    PsReturnStatus SetDepthRange(PsDepthRange depthRange);
+    PsReturnStatus SetColoPixelFormat(PsPixelFormat pixelFormat);
+    PsReturnStatus SetDataMode(PsDataMode dataMode);
+    PsReturnStatus SetThreshold(uint16_t threshold);
+    PsReturnStatus SetFIlter(PsFilterType filterType, bool enable);
+    PsReturnStatus SetDepthDistortionCorrectionEnabled(bool enable);
+    PsReturnStatus SetRGBDistortionCorrectionEnabled(bool enable);
+    PsReturnStatus SetComputeRealDepthCorrectionEnabled(bool enable);
+    PsReturnStatus SetSmoothingFilterEnabled(bool enable);
+    PsReturnStatus SetResolution(PsResolution resolution);
+    PsReturnStatus SetSpatialFilterEnabled(bool enable);
+
+    // Main PointCloud Feautures funtions
+    void SetPointCloudRGB();
+    void SetPointCloudClassic();
+    void SetFeatureDetection(bool enable);
 
 private:
     //Private functions
@@ -89,8 +110,14 @@ private:
     PointCloud<PointXYZRGB>::Ptr pointCloudRGB = nullptr;
     pcl::RangeImage::Ptr rangeImage = nullptr;
     int32_t m_deviceIndex;
-    PsDepthRange depthRange;
-    int32_t dataMode;
+    PsDepthRange m_depthRange;
+    PsDataMode m_dataMode;
+    bool m_pointCloudClassic;
+    bool m_pointCloudMappedRGB;
+    bool m_detectorHarris;
+    bool m_detectorNARF;
+    bool m_detectorISS;
+    bool m_wdrDepth;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H

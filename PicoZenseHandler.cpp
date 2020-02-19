@@ -19,8 +19,16 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
 
     m_devIndex = devIndex;
-    depthRange = PsNearRange;
-    dataMode = PsWDR_Depth;
+    m_depthRange = PsNearRange;
+    m_dataMode = PsDepthAndRGB_30;
+    m_pointCloudClassic = true;
+    m_wdrDepth = false;
+    m_pointCloudMappedRGB = false;
+    m_detectorHarris = false;
+    m_detectorNARF = false;
+    m_detectorISS = false;
+
+    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888");
 }
 
 
@@ -75,7 +83,7 @@ void PicoZenseHandler::Visualize()
     }
 
     //Set the Depth Range to Near through PsSetDepthRange interface
-    status = PsSetDepthRange(m_deviceIndex, depthRange);
+    status = PsSetDepthRange(m_deviceIndex, m_depthRange);
     if (status != PsReturnStatus::PsRetOK)
         error("PsSetDepthRange failed!");
     else
@@ -93,7 +101,7 @@ void PicoZenseHandler::Visualize()
     PsSetColorPixelFormat(m_deviceIndex, PsPixelFormatRGB888);
 
     //Set to data mode
-    status = PsSetDataMode(m_deviceIndex, (PsDataMode)dataMode);
+    status = PsSetDataMode(m_deviceIndex, (PsDataMode)m_dataMode);
     if (status != PsReturnStatus::PsRetOK)
     {
         std::cout << "Set DataMode Failed failed!\n";
@@ -106,10 +114,6 @@ void PicoZenseHandler::Visualize()
     // PsSetWDRFusionThreshold(m_deviceIndex, 1000, 2000);
     // PsSetWDROutputMode(m_deviceIndex, &wdrMode);
     // PsSetWDRStyle(m_deviceIndex, PsWDR_ALTERNATION);
-
-    //Enable the Depth and RGB synchronize feature
-    // PsSetSynchronizeEnabled(m_deviceIndex, true);
-    // status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
 
     PsCameraParameters depthCameraParameters;
     status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &depthCameraParameters);
@@ -126,18 +130,8 @@ void PicoZenseHandler::Visualize()
     if (status != PsRetOK)
         debug("PsGetCameraExtrinsicParameters failed with error ", PsStatusToString(status));
 
-    cv::Mat imageMat;
 
-    bool f_bDistortionCorrection = false;
-    bool f_bFilter = false;
-    bool f_bMappedRGB = true;
-    bool f_bMappedIR = true;
-    bool f_bMappedDepth = true;
-    bool f_bWDRMode = false;
-    bool f_bInvalidDepth2Zero = false;
-    bool f_bDustFilter = false;
-    bool f_bSync = true;
-
+    // Main loop
     for (;;)
     {
         PsFrame depthFrame = {0};
@@ -150,22 +144,20 @@ void PicoZenseHandler::Visualize()
             warn("PsReadNextFrame gave ", PsStatusToString(status));
 
         //Get depth frame, depth frame only output in following data mode
-        if (dataMode == PsDepthAndRGB_30 || dataMode == PsDepthAndIR_30 || dataMode == PsDepthAndIRAndRGB_30 || dataMode == PsDepthAndIR_15_RGB_30)
+        if (!m_pointCloudMappedRGB && !m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
 
             if (depthFrame.pFrameData != NULL)
             {
-                //Display the Depth Image
-
                 //Generate and display PointCloud
-                // PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
+                PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
             }
         }
 
         //Get WDR depth frame(fusion or alternatively, determined by PsSetWDRStyle, default in fusion)
         //WDR depth frame only output in PsWDR_Depth data mode
-        if (dataMode == PsWDR_Depth)
+        if (m_dataMode == PsWDR_Depth && !m_pointCloudMappedRGB)
         {
             PsGetFrame(m_deviceIndex, PsWDRDepthFrame, &wdrDepthFrame);
             if (wdrDepthFrame.pFrameData != NULL)
@@ -178,7 +170,7 @@ void PicoZenseHandler::Visualize()
         //Get mapped rgb frame which is mapped to depth camera space
         //Mapped rgb frame only output in following data mode
         //And can only get when the feature is enabled through api PsSetMapperEnabledDepthToRGB
-        if (dataMode == PsDepthAndRGB_30 || dataMode == PsDepthAndIRAndRGB_30 || dataMode == PsWDR_Depth || dataMode == PsDepthAndIR_15_RGB_30)
+        if (m_pointCloudMappedRGB && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsWDR_Depth || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsMappedRGBFrame, &mappedRGBFrame);
 
@@ -197,7 +189,7 @@ void PicoZenseHandler::Visualize()
     cv::destroyAllWindows();
 }
 
-void PicoZenseHandler::PrintCameraParameters()
+void PicoZenseHandler::GetCameraParameters()
 {
     PsCameraParameters cameraParameters;
     PsReturnStatus status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &cameraParameters);
@@ -253,6 +245,165 @@ int PicoZenseHandler::SavePCD(const std::string &filename)
     debug("Going to write");
     int ret = w.write(filename, *pointCloud);
     return ret;
+}
+
+void PicoZenseHandler::GetImu()
+{
+    PsImuWithParams imuParam;
+    PsReturnStatus status = PsGetImuWithParams(m_deviceIndex, &imuParam);
+    if (status != PsRetOK)
+        error("GetImuWithParam failed with error ", PsStatusToString(status));
+
+    info("Imu Params:\n", "Acceleration (x, y, z) = [",  std::to_string(imuParam.acc.x),
+        ", ", std::to_string(imuParam.acc.y), ", ", std::to_string(imuParam.acc.z),
+        "]\nGyroscope (x, y, z) = [", std::to_string(imuParam.gyro.x), ", ", std::to_string(imuParam.gyro.y), ", ",
+        std::to_string(imuParam.gyro.z), "]\nTemperature (°C) = ", std::to_string(imuParam.temp),
+        "\nFrame n° ", std::to_string(imuParam.frameNo));
+}
+
+PsReturnStatus PicoZenseHandler::SetDepthRange(PsDepthRange depthRange)
+{
+    PsReturnStatus status = PsSetDepthRange(m_devIndex, depthRange);
+    if (status != PsRetOK)
+        error("PsSetDepthRange failed with error ", PsStatusToString(status));
+    else
+    {
+        info("SetDepthRange done");
+        m_depthRange = depthRange;
+    }
+}
+
+PsReturnStatus PicoZenseHandler::SetColoPixelFormat(PsPixelFormat pixelFormat)
+{
+    PsReturnStatus status = PsSetColorPixelFormat(m_devIndex, pixelFormat);
+    if (status != PsRetOK)
+        error("PsSetColorPixelFormat failed with error ", PsStatusToString(status));
+    else
+        info("SetColorPixelFormat done");
+}
+
+PsReturnStatus PicoZenseHandler::SetDataMode(PsDataMode dataMode)
+{
+    PsReturnStatus status = PsSetDataMode(m_devIndex, dataMode);
+    if (status != PsRetOK)
+        error("PsSetDataMode failed with error ", PsStatusToString(status));
+    else
+    {
+        info("PsSetDataMode done");
+        m_dataMode = dataMode;
+    }
+}
+
+PsReturnStatus PicoZenseHandler::SetThreshold(uint16_t threshold)
+{
+    PsReturnStatus status = PsSetThreshold(m_devIndex, threshold);
+    if (status != PsRetOK)
+        error("PsSetThreshold failed with error ", PsStatusToString(status));
+    else
+        info("PsSetThreshold done");
+}
+
+PsReturnStatus PicoZenseHandler::SetFIlter(PsFilterType filterType, bool enable)
+{
+    PsReturnStatus status = PsSetFilter(m_devIndex, filterType, enable);
+    if (status != PsRetOK)
+        error("PsSetFilter failed with error ", PsStatusToString(status));
+    else
+        info("PsSetFilter done");
+}
+
+PsReturnStatus PicoZenseHandler::SetDepthDistortionCorrectionEnabled(bool enable)
+{
+    PsReturnStatus status = PsSetDepthDistortionCorrectionEnabled(m_devIndex, enable);
+    if (status != PsRetOK)
+        error("PsSetDepthDistortionCorrectionEnabled failed with error ", PsStatusToString(status));
+    else
+        info("PsSetDepthDistortionCorrectionEnabled done");
+}
+
+PsReturnStatus PicoZenseHandler::SetRGBDistortionCorrectionEnabled(bool enable)
+{
+    PsReturnStatus status = PsSetRGBDistortionCorrectionEnabled(m_devIndex, enable);
+    if (status != PsRetOK)
+        error("PsSetRGBDistortionCorrectionEnabled failed with error ", PsStatusToString(status));
+    else
+        info("PsSetRGBDistortionCorrectionEnabled done");
+}
+
+PsReturnStatus PicoZenseHandler::SetComputeRealDepthCorrectionEnabled(bool enable)
+{
+    PsReturnStatus status = PsSetComputeRealDepthCorrectionEnabled(m_devIndex, enable);
+    if (status != PsRetOK)
+        error("PsSetComputeRealDepthCorrectionEnabled failed with error ", PsStatusToString(status));
+    else
+        info("PsSetComputeRealDepthCorrectionEnabled done");
+}
+
+PsReturnStatus PicoZenseHandler::SetSmoothingFilterEnabled(bool enable)
+{
+    PsReturnStatus status = PsSetSmoothingFilterEnabled(m_devIndex, enable);
+    if (status != PsRetOK)
+        error("PsSetSmoothingFilterEnabled failed with error ", PsStatusToString(status));
+    else
+        info("PsSetSmoothingFilterEnabled done");
+}
+
+PsReturnStatus PicoZenseHandler::SetResolution(PsResolution resolution)
+{
+    PsReturnStatus status = PsSetResolution(m_devIndex, resolution);
+    if (status != PsRetOK)
+        error("PsSetResolution failed with error ", PsStatusToString(status));
+    else
+        info("PsSetResolution done");
+}
+
+PsReturnStatus PicoZenseHandler::SetSpatialFilterEnabled(bool enable)
+{
+    PsReturnStatus status = PsSetSpatialFilterEnabled(m_devIndex, enable);
+    if (status != PsRetOK)
+        error("PsSetSpatialFilterEnabled failed with error ", PsStatusToString(status));
+    else
+        info("PsSetSpatialFilterEnabled done");
+}
+
+void PicoZenseHandler::SetFeatureDetection(bool enable)
+{
+    m_detectorNARF = true;
+}
+
+void PicoZenseHandler::SetPointCloudClassic()
+{
+    // Disable RGB Mapped feature first
+    PsReturnStatus status;
+    if (m_pointCloudMappedRGB)
+    {
+        status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
+        if (status != PsRetOK)
+            error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+        m_pointCloudMappedRGB = false;
+    }
+
+    // TODO --> clear and delete the pointCloud classic and create the rgb
+
+    m_pointCloudClassic = true;
+}
+
+void PicoZenseHandler::SetPointCloudRGB()
+{
+    // Disable Classic way
+    m_pointCloudClassic = false;
+
+    //Enable the Depth and RGB synchronize feature
+    PsReturnStatus status = PsSetSynchronizeEnabled(m_deviceIndex, true);
+    if (status != PsRetOK)
+        error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
+    status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
+    if (status != PsRetOK)
+        error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+
+    // TODO --> clear and delete the pointCloud classic and create the rgb
+
+    m_pointCloudMappedRGB = true;
 }
 
 /*  Private Functions  */
@@ -464,7 +615,12 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     pointCloud->height = 1;
 
     // Invoke a corner detection method
-    // NARFCorenerDetection();
+    if (m_detectorHarris)
+        Harris3DCornerDetection();
+    else if (m_detectorNARF)
+        NARFCorenerDetection();
+    else if (m_detectorISS)
+        ISSCornerDetection();
 
     // m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
@@ -572,7 +728,7 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
     std::cout << "Keyboard: key -> " << event.getKeySym() << std::endl;
     if (event.getKeySym() == "p" && event.keyUp())
     {
-        picoHandler->PrintCameraParameters();
+        picoHandler->GetCameraParameters();
     }
 }
 
