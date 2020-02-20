@@ -8,10 +8,10 @@ using namespace Eigen;
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer);
+static bool m_loop;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 {
-    debug("PicoZense object created");
     m_visualizer = InitializeInterations();
     m_visualizer->setBackgroundColor(0.0, 0.0, 0.0);
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
@@ -27,6 +27,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_detectorHarris = false;
     m_detectorNARF = false;
     m_detectorISS = false;
+    m_loop = true;
 
     info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888");
 }
@@ -34,25 +35,26 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 
 PicoZenseHandler::~PicoZenseHandler()
 {
+    if (m_visualizer != nullptr)
+    {
+        m_visualizer->removeAllPointClouds();
+        // m_visualizer->close();
+        // m_visualizer = nullptr;
+    }
     if (pointCloud != nullptr)
     {
+        pointCloud->clear();
         pointCloud = nullptr;
-        // delete pointCloud;
     }
     if (pointCloudRGB != nullptr)
     {
+        pointCloudRGB->clear();
         pointCloudRGB = nullptr;
-        // delete pointCloudRGB;
-    }
-    if (m_visualizer != nullptr)
-    {
-        m_visualizer = nullptr;
-        // delete m_visualizer;
     }
     if (rangeImage != nullptr)
     {
+        rangeImage->clear();
         rangeImage = nullptr;
-        // delete rangeImage;
     }
 
     debug("PicoZense destroyed");    
@@ -107,13 +109,6 @@ void PicoZenseHandler::Visualize()
         std::cout << "Set DataMode Failed failed!\n";
     }
 
-    //WDR STUFF
-    //Set WDR Output Mode, three ranges Near/Middle/Far output from device every one frame
-    // PsWDROutputMode wdrMode = { PsWDRTotalRange_Three, PsNearRange, 1, PsMidRange, 1, PsNearRange, 1 };
-    //Set WDR fusion threshold
-    // PsSetWDRFusionThreshold(m_deviceIndex, 1000, 2000);
-    // PsSetWDROutputMode(m_deviceIndex, &wdrMode);
-    // PsSetWDRStyle(m_deviceIndex, PsWDR_ALTERNATION);
 
     PsCameraParameters depthCameraParameters;
     status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &depthCameraParameters);
@@ -132,7 +127,7 @@ void PicoZenseHandler::Visualize()
 
 
     // Main loop
-    for (;;)
+    while (m_loop)
     {
         PsFrame depthFrame = {0};
         PsFrame wdrDepthFrame = {0};
@@ -182,11 +177,10 @@ void PicoZenseHandler::Visualize()
     }
 
     status = PsCloseDevice(m_deviceIndex);
-    info("CloseDevice status: ", status);
+    info("CloseDevice status: ", PsStatusToString(status));
 
     status = PsShutdown();
-    info("Shutdown status: ", status);
-    cv::destroyAllWindows();
+    info("Shutdown status: ", PsStatusToString(status));
 }
 
 void PicoZenseHandler::GetCameraParameters()
@@ -375,35 +369,89 @@ void PicoZenseHandler::SetPointCloudClassic()
 {
     // Disable RGB Mapped feature first
     PsReturnStatus status;
-    if (m_pointCloudMappedRGB)
+    if (m_pointCloudMappedRGB || m_wdrDepth)
     {
+        if (m_wdrDepth)
+        {
+            status = PsSetDataMode(m_deviceIndex, PsDepthAndRGB_30);
+            if (status != PsRetOK)
+                error("PsSetDataMode failed with error ", PsStatusToString(status));
+            m_wdrDepth = false;
+        }
+        //Disable the Depth and RGB synchronize feature
+        status = PsSetSynchronizeEnabled(m_deviceIndex, false);
+        if (status != PsRetOK)
+            error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
         m_pointCloudMappedRGB = false;
+        m_pointCloudClassic = true;
     }
-
-    // TODO --> clear and delete the pointCloud classic and create the rgb
-
-    m_pointCloudClassic = true;
 }
 
 void PicoZenseHandler::SetPointCloudRGB()
 {
     // Disable Classic way
-    m_pointCloudClassic = false;
+    PsReturnStatus status;
+    if (m_pointCloudClassic || m_wdrDepth)
+    {
+        if (m_wdrDepth)
+        {
+            status = PsSetDataMode(m_deviceIndex, PsDepthAndRGB_30);
+            if (status != PsRetOK)
+                error("PsSetDataMode failed with error ", PsStatusToString(status));
+            m_wdrDepth = false;
+        }
+        //Enable the Depth and RGB synchronize feature
+        status = PsSetSynchronizeEnabled(m_deviceIndex, true);
+        if (status != PsRetOK)
+            error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
+        status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
+        if (status != PsRetOK)
+            error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+        m_pointCloudClassic = false;
+        m_pointCloudMappedRGB = true;
+    }
+}
 
-    //Enable the Depth and RGB synchronize feature
-    PsReturnStatus status = PsSetSynchronizeEnabled(m_deviceIndex, true);
-    if (status != PsRetOK)
-        error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
-    status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
-    if (status != PsRetOK)
-        error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-
-    // TODO --> clear and delete the pointCloud classic and create the rgb
-
-    m_pointCloudMappedRGB = true;
+void PicoZenseHandler::SetWDRDataMode()
+{
+    // Disable Classic and RGB
+    PsReturnStatus status;
+    if (m_pointCloudClassic || m_pointCloudMappedRGB)
+    {
+        if (m_pointCloudMappedRGB)
+        {
+            //Disable the Depth and RGB synchronize feature
+            status = PsSetSynchronizeEnabled(m_deviceIndex, false);
+            if (status != PsRetOK)
+                error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
+            status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
+            if (status != PsRetOK)
+                error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+            m_pointCloudMappedRGB = false;
+        }
+        PsDataMode dataMode = PsWDR_Depth;
+        status = PsSetDataMode(m_deviceIndex, dataMode);
+        if (status != PsRetOK)
+            error("PsSetDataMode failed with error ", PsStatusToString(status));
+        //Set WDR Output Mode, three ranges Near/Middle/Far output from device every one frame
+        PsWDROutputMode wdrMode = {PsWDRTotalRange_Three, PsNearRange, 1, PsMidRange, 1, PsFarRange, 1};
+        status = PsSetWDROutputMode(m_deviceIndex, &wdrMode);
+        if (status != PsRetOK)
+            error("PsSetWDROutputMode failed with error ", PsStatusToString(status));
+        //Set WDR fusion threshold
+        status = PsSetWDRFusionThreshold(m_deviceIndex, 1000, 2500);
+        if (status != PsRetOK)
+            error("PsSetWDRFusionThreshold failed with error ", PsStatusToString(status));
+        status = PsSetWDRStyle(m_deviceIndex, PsWDR_FUSION);
+        if (status != PsRetOK)
+            error("PsSetWDRStyle failed with error ", PsStatusToString(status));
+        
+        m_pointCloudClassic = false;
+        m_wdrDepth = true;
+    }
 }
 
 /*  Private Functions  */
@@ -725,10 +773,15 @@ static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void*
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void *pico)
 {
     PicoZenseHandler* picoHandler = static_cast<PicoZenseHandler *>(pico);
-    std::cout << "Keyboard: key -> " << event.getKeySym() << std::endl;
     if (event.getKeySym() == "p" && event.keyUp())
     {
         picoHandler->GetCameraParameters();
+    }
+    else if (event.getKeySym() == "Escape" && event.keyUp())
+    {
+        info("Shutting down ...");
+        m_loop = false;
+        // Free what allocated
     }
 }
 
@@ -737,5 +790,5 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
     pcl::visualization::PCLVisualizer *v = static_cast<pcl::visualization::PCLVisualizer *>(viewer);
     float x, y, z;
     event.getPoint(x, y, z);
-    std::cout << "Point [" << std::to_string(x) << ";" << std::to_string(y) << ";" << std::to_string(z) << "]" << std::endl;
+    debug("Point [", std::to_string(x), ";", std::to_string(y), ";", std::to_string(z), "]");
 }

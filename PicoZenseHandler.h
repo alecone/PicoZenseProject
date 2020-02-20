@@ -35,6 +35,27 @@
 #define BOLDCYAN "\033[1m\033[36m"    /* Bold Cyan */
 #define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
 
+template <class... Args>
+void debug(Args... args)
+{
+    (std::cout << BOLDBLUE << ... << args) << RESET << std::endl;
+}
+template <class... Args>
+void info(Args... args)
+{
+    (std::cout << BOLDGREEN << ... << args) << RESET << std::endl;
+}
+template <class... Args>
+void warn(Args... args)
+{
+    (std::cout << BOLDYELLOW << ... << args) << RESET << std::endl;
+}
+template <class... Args>
+void error(Args... args)
+{
+    (std::cout << BOLDRED << ... << args) << RESET << std::endl;
+}
+
 using namespace pcl;
 using namespace cv;
 
@@ -69,6 +90,7 @@ public:
     void SetPointCloudRGB();
     void SetPointCloudClassic();
     void SetFeatureDetection(bool enable);
+    void SetWDRDataMode();
 
 private:
     //Private functions
@@ -79,30 +101,10 @@ private:
     void NARFCorenerDetection();
     void ISSCornerDetection();
     void CreateRangeImage();
-    template <class... Args>
-    void debug(Args... args)
-    {
-        (std::cout << BOLDBLUE << ... << args) << RESET << std::endl;
-    }
-    template <class... Args>
-    void info(Args... args)
-    {
-        (std::cout << BOLDGREEN << ... << args) << RESET << std::endl;
-    }
-    template <class... Args>
-    void warn(Args... args)
-    {
-        (std::cout << BOLDYELLOW << ... << args) << RESET << std::endl;
-    }
-    template <class... Args>
-    void error(Args... args)
-    {
-        (std::cout << BOLDRED << ... << args) << RESET << std::endl;
-    }
 
     //Provate members
     int32_t m_devIndex;
-    pcl::visualization::CloudViewer *m_viewer = nullptr;
+    // pcl::visualization::CloudViewer *m_viewer = nullptr;
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
     cv::Mat imageMatrix;
     cv::Mat imageMatrixRGB;
