@@ -1,5 +1,6 @@
 #include "PicoZenseHandler.h"
 
+
 using namespace std;
 using namespace cv;
 using namespace pcl;
@@ -60,13 +61,12 @@ PicoZenseHandler::~PicoZenseHandler()
     debug("PicoZense destroyed");    
 }
 
-
-void PicoZenseHandler::Visualize()
+void PicoZenseHandler::init()
 {
     PsReturnStatus status;
     int32_t deviceCount = 0;
-    uint32_t slope = 1450;
-    uint32_t wdrSlope = 4400;
+    // uint32_t slope = 1450;
+    // uint32_t wdrSlope = 4400;
 
     status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
@@ -108,7 +108,13 @@ void PicoZenseHandler::Visualize()
     {
         std::cout << "Set DataMode Failed failed!\n";
     }
+}
 
+void *PicoZenseHandler::Visualize()
+{
+    // Printing threadID
+    debug("Running threadID: ", pthread_self());
+    PsReturnStatus status;
 
     PsCameraParameters depthCameraParameters;
     status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &depthCameraParameters);
@@ -181,6 +187,9 @@ void PicoZenseHandler::Visualize()
 
     status = PsShutdown();
     info("Shutdown status: ", PsStatusToString(status));
+
+    // Return in order to make thread exit
+    return NULL;
 }
 
 void PicoZenseHandler::GetCameraParameters()

@@ -16,6 +16,7 @@
 #include <pcl-1.8/pcl/io/pcd_io.h>
 #include <pcl-1.8/pcl/keypoints/iss_3d.h>
 #include <PicoZense_api.h>
+#include "pthread.h"
 
 #define RESET "\033[0m"
 #define BLACK "\033[30m"              /* Black */
@@ -65,7 +66,8 @@ public:
     explicit PicoZenseHandler(int32_t devIndex);
     ~PicoZenseHandler();
 
-    void Visualize();
+    void *Visualize();
+    void init();
     int SavePCD(const std::string &filename);
     pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
 
