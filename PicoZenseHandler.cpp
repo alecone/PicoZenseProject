@@ -180,6 +180,8 @@ void *PicoZenseHandler::Visualize()
                 PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters);
             }
         }
+        imageMatrix.release();
+        imageMatrixRGB.release();
     }
 
     status = PsCloseDevice(m_deviceIndex);
