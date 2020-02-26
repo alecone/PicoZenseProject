@@ -145,11 +145,11 @@ void *PicoZenseHandler::Visualize()
             warn("PsReadNextFrame gave ", PsStatusToString(status));
 
         //Get depth frame, depth frame only output in following data mode
-        if (!m_pointCloudMappedRGB && !m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
+        if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
 
-            if (depthFrame.pFrameData != NULL)
+            if (!m_pointCloudMappedRGB && depthFrame.pFrameData != NULL)
             {
                 //Generate and display PointCloud
                 PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
@@ -158,10 +158,10 @@ void *PicoZenseHandler::Visualize()
 
         //Get WDR depth frame(fusion or alternatively, determined by PsSetWDRStyle, default in fusion)
         //WDR depth frame only output in PsWDR_Depth data mode
-        if (m_dataMode == PsWDR_Depth && !m_pointCloudMappedRGB)
+        if (m_dataMode == PsWDR_Depth)
         {
             PsGetFrame(m_deviceIndex, PsWDRDepthFrame, &wdrDepthFrame);
-            if (wdrDepthFrame.pFrameData != NULL)
+            if (!m_pointCloudMappedRGB && wdrDepthFrame.pFrameData != NULL)
             {
                 //Display the WDR Depth Image
                 PointCloudCreatorXYZ(wdrDepthFrame.height, wdrDepthFrame.width, imageMatrix, wdrDepthFrame.pFrameData, depthCameraParameters);
@@ -174,10 +174,12 @@ void *PicoZenseHandler::Visualize()
         if (m_pointCloudMappedRGB && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsWDR_Depth || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsMappedRGBFrame, &mappedRGBFrame);
-
             if (mappedRGBFrame.pFrameData != NULL)
             {
-                PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters);
+                if (m_dataMode == PsWDR_Depth)
+                    PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters);
+                else
+                    PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters);
             }
         }
         imageMatrix.release();
@@ -276,6 +278,7 @@ PsReturnStatus PicoZenseHandler::SetDepthRange(PsDepthRange depthRange)
         info("SetDepthRange done");
         m_depthRange = depthRange;
     }
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetColoPixelFormat(PsPixelFormat pixelFormat)
@@ -285,6 +288,7 @@ PsReturnStatus PicoZenseHandler::SetColoPixelFormat(PsPixelFormat pixelFormat)
         error("PsSetColorPixelFormat failed with error ", PsStatusToString(status));
     else
         info("SetColorPixelFormat done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetDataMode(PsDataMode dataMode)
@@ -297,6 +301,7 @@ PsReturnStatus PicoZenseHandler::SetDataMode(PsDataMode dataMode)
         info("PsSetDataMode done");
         m_dataMode = dataMode;
     }
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetThreshold(uint16_t threshold)
@@ -306,6 +311,7 @@ PsReturnStatus PicoZenseHandler::SetThreshold(uint16_t threshold)
         error("PsSetThreshold failed with error ", PsStatusToString(status));
     else
         info("PsSetThreshold done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetFIlter(PsFilterType filterType, bool enable)
@@ -315,6 +321,7 @@ PsReturnStatus PicoZenseHandler::SetFIlter(PsFilterType filterType, bool enable)
         error("PsSetFilter failed with error ", PsStatusToString(status));
     else
         info("PsSetFilter done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetDepthDistortionCorrectionEnabled(bool enable)
@@ -324,6 +331,7 @@ PsReturnStatus PicoZenseHandler::SetDepthDistortionCorrectionEnabled(bool enable
         error("PsSetDepthDistortionCorrectionEnabled failed with error ", PsStatusToString(status));
     else
         info("PsSetDepthDistortionCorrectionEnabled done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetRGBDistortionCorrectionEnabled(bool enable)
@@ -333,6 +341,7 @@ PsReturnStatus PicoZenseHandler::SetRGBDistortionCorrectionEnabled(bool enable)
         error("PsSetRGBDistortionCorrectionEnabled failed with error ", PsStatusToString(status));
     else
         info("PsSetRGBDistortionCorrectionEnabled done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetComputeRealDepthCorrectionEnabled(bool enable)
@@ -342,6 +351,7 @@ PsReturnStatus PicoZenseHandler::SetComputeRealDepthCorrectionEnabled(bool enabl
         error("PsSetComputeRealDepthCorrectionEnabled failed with error ", PsStatusToString(status));
     else
         info("PsSetComputeRealDepthCorrectionEnabled done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetSmoothingFilterEnabled(bool enable)
@@ -351,6 +361,7 @@ PsReturnStatus PicoZenseHandler::SetSmoothingFilterEnabled(bool enable)
         error("PsSetSmoothingFilterEnabled failed with error ", PsStatusToString(status));
     else
         info("PsSetSmoothingFilterEnabled done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetResolution(PsResolution resolution)
@@ -360,6 +371,7 @@ PsReturnStatus PicoZenseHandler::SetResolution(PsResolution resolution)
         error("PsSetResolution failed with error ", PsStatusToString(status));
     else
         info("PsSetResolution done");
+    return status;
 }
 
 PsReturnStatus PicoZenseHandler::SetSpatialFilterEnabled(bool enable)
@@ -369,6 +381,7 @@ PsReturnStatus PicoZenseHandler::SetSpatialFilterEnabled(bool enable)
         error("PsSetSpatialFilterEnabled failed with error ", PsStatusToString(status));
     else
         info("PsSetSpatialFilterEnabled done");
+    return status;
 }
 
 void PicoZenseHandler::SetFeatureDetection(bool enable)
@@ -544,11 +557,10 @@ pcl::visualization::PCLVisualizer::Ptr PicoZenseHandler::InitializeInterations()
 
 void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params)
 {
-    p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
+    p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
     
     p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert image data to float type
-
     if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
     {
         error("Images with different sizes!!!");
@@ -606,9 +618,9 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
     pointCloudRGB->height = 1;
 
-    if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloudRGB"))
-        m_visualizer->addPointCloud(pointCloudRGB, "PointCloudRGB");
-    
+    if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
+        m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
+
     // m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
 }
