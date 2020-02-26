@@ -10,6 +10,7 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer);
 static bool m_loop;
+static PointXYZ old;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 {
@@ -813,5 +814,29 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
     pcl::visualization::PCLVisualizer *v = static_cast<pcl::visualization::PCLVisualizer *>(viewer);
     float x, y, z;
     event.getPoint(x, y, z);
-    debug("Point [", std::to_string(x), ";", std::to_string(y), ";", std::to_string(z), "]");
+    if (old.z == 0)
+    {
+        //First point clicked, addind to vector
+        old.x = x;
+        old.y = y;
+        old.z = z;
+    }
+    else
+    {
+        //Calculate here euclidean 
+        PointXYZ novo;
+        novo.x = x;
+        novo.y = y;
+        novo.z = z;
+
+        double distance = std::sqrt(std::pow((old.x-novo.x), 2) +
+        std::pow((old.y - novo.y), 2) + std::pow((old.z - novo.z), 2));
+        debug("Distance calculated is ", std::to_string(distance));
+
+        old = novo;
+        //Some issues here to be fixed
+        // v->addLine<PointXYZ, PointXYZ>(old, novo, 0.0, 0.0, 1.0);
+        // v->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 50, "line");
+    }
+    // debug("Point [", std::to_string(x), ";", std::to_string(y), ";", std::to_string(z), "]");
 }
