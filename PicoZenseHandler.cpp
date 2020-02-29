@@ -662,9 +662,11 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         pointCloudRGB->height = 1;
     }
 
+    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
 
-    if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
-        m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
+    if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
+        m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
+    m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
 
     m_visualizer->spinOnce();
 }
