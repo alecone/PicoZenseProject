@@ -6,6 +6,8 @@ using namespace cv;
 using namespace pcl;
 using namespace Eigen;
 
+#define CUSTOM_MAPPED_DEPTH_RGB     0
+
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer);
@@ -20,6 +22,11 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
 
+    auto angle = M_PI;
+    q.x() = 0 * sin(angle / 2);
+    q.y() = 0 * sin(angle / 2);
+    q.z() = 1 * sin(angle / 2);
+    q.w() = 1 * std::cos(angle / 2);
     m_devIndex = devIndex;
     m_depthRange = PsNearRange;
     m_dataMode = PsDepthAndRGB_30;
@@ -29,6 +36,8 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_detectorHarris = false;
     m_detectorNARF = false;
     m_detectorISS = false;
+    m_fastBiFilter = false;
+    m_bilateralUpsampling = false;
     m_loop = true;
 
     info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888");
@@ -102,6 +111,9 @@ void PicoZenseHandler::init()
 
     //Set PixelFormat as PsPixelFormatBGR888 for opencv display
     PsSetColorPixelFormat(m_deviceIndex, PsPixelFormatRGB888);
+#if CUSTOM_MAPPED_DEPTH_RGB
+    PsSetResolution(m_devIndex, PsRGB_Resolution_640_480);
+#endif
 
     //Set to data mode
     status = PsSetDataMode(m_deviceIndex, (PsDataMode)m_dataMode);
@@ -139,6 +151,9 @@ void *PicoZenseHandler::Visualize()
         PsFrame depthFrame = {0};
         PsFrame wdrDepthFrame = {0};
         PsFrame mappedRGBFrame = {0};
+#if CUSTOM_MAPPED_DEPTH_RGB
+        PsFrame rgbFrame = {0};
+#endif // CUSTOM_MAPPED_DEPTH_RGB
 
         // Read one frame before call PsGetFrame
         status = PsReadNextFrame(m_deviceIndex);
@@ -149,11 +164,18 @@ void *PicoZenseHandler::Visualize()
         if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
+#if CUSTOM_MAPPED_DEPTH_RGB
+            PsGetFrame(m_deviceIndex, PsRGBFrame, &rgbFrame);
+#endif
 
             if (!m_pointCloudMappedRGB && depthFrame.pFrameData != NULL)
             {
                 //Generate and display PointCloud
+#if CUSTOM_MAPPED_DEPTH_RGB
+                PointCloudMapRGBDepthCustom(depthFrame.height, depthFrame.width, imageRGB, imageMatrix, rgbFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters, rgbCameraParameters, CameraExtrinsicParameters);
+#else
                 PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
+#endif
             }
         }
 
@@ -185,6 +207,9 @@ void *PicoZenseHandler::Visualize()
         }
         imageMatrix.release();
         imageMatrixRGB.release();
+#if CUSTOM_MAPPED_DEPTH_RGB
+        imageRGB.release();
+#endif
     }
 
     status = PsCloseDevice(m_deviceIndex);
@@ -205,16 +230,16 @@ void PicoZenseHandler::GetCameraParameters()
     info("Depth Camera Intinsic:\n", "Fx: ", std::to_string(cameraParameters.fx), "\n",
          "Cx: ", std::to_string(cameraParameters.cx), "\n",
          "Fy: ", std::to_string(cameraParameters.fy), "\n",
-         "Cy: ", std::to_string(cameraParameters.cy), "\n",
-         "Depth Distortion Coefficient: \n",
-         "K1: ", std::to_string(cameraParameters.k1), "\n",
-         "K2: ", std::to_string(cameraParameters.k2), "\n",
-         "P1: ", std::to_string(cameraParameters.p1), "\n",
-         "P2: ", std::to_string(cameraParameters.p2), "\n",
-         "K3: ", std::to_string(cameraParameters.k3), "\n",
-         "K4: ", std::to_string(cameraParameters.k4), "\n",
-         "K5: ", std::to_string(cameraParameters.k5), "\n",
-         "K6: ", std::to_string(cameraParameters.k6));
+         "Cy: ", std::to_string(cameraParameters.cy));//, "\n",
+        //  "Depth Distortion Coefficient: \n",
+        //  "K1: ", std::to_string(cameraParameters.k1), "\n",
+        //  "K2: ", std::to_string(cameraParameters.k2), "\n",
+        //  "P1: ", std::to_string(cameraParameters.p1), "\n",
+        //  "P2: ", std::to_string(cameraParameters.p2), "\n",
+        //  "K3: ", std::to_string(cameraParameters.k3), "\n",
+        //  "K4: ", std::to_string(cameraParameters.k4), "\n",
+        //  "K5: ", std::to_string(cameraParameters.k5), "\n",
+        //  "K6: ", std::to_string(cameraParameters.k6));
 
     status = PsGetCameraParameters(m_deviceIndex, PsRgbSensor, &cameraParameters);
     info("Get PsGetCameraParameters PsRgbSensor status: ", PsStatusToString(status));
@@ -222,29 +247,24 @@ void PicoZenseHandler::GetCameraParameters()
          "Fx: ", std::to_string(cameraParameters.fx), "\n",
          "Cx: ", std::to_string(cameraParameters.cx), "\n",
          "Fy: ", std::to_string(cameraParameters.fy), "\n",
-         "Cy: ", std::to_string(cameraParameters.cy), "\n",
-         "RGB Distortion Coefficient: \n",
-         "K1: ", std::to_string(cameraParameters.k1), "\n",
-         "K2: ", std::to_string(cameraParameters.k2), "\n",
-         "P1: ", std::to_string(cameraParameters.p1), "\n",
-         "P2: ", std::to_string(cameraParameters.p2), "\n",
-         "K3: ", std::to_string(cameraParameters.k3), "\n");
+         "Cy: ", std::to_string(cameraParameters.cy));//, "\n",
+        //  "RGB Distortion Coefficient: \n",
+        //  "K1: ", std::to_string(cameraParameters.k1), "\n",
+        //  "K2: ", std::to_string(cameraParameters.k2), "\n",
+        //  "P1: ", std::to_string(cameraParameters.p1), "\n",
+        //  "P2: ", std::to_string(cameraParameters.p2), "\n",
+        //  "K3: ", std::to_string(cameraParameters.k3), "\n");
 
     PsCameraExtrinsicParameters CameraExtrinsicParameters;
     status = PsGetCameraExtrinsicParameters(m_deviceIndex, &CameraExtrinsicParameters);
 
     info("Get PsGetCameraExtrinsicParameters status: ", PsStatusToString(status));
     info("Camera rotation: \n",
-         std::to_string(CameraExtrinsicParameters.rotation[0]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[4]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[5]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[6]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[7]), " ",
-         std::to_string(CameraExtrinsicParameters.rotation[8]), " ",
+         std::to_string(CameraExtrinsicParameters.rotation[0]), " ", std::to_string(CameraExtrinsicParameters.rotation[1]), " ", std::to_string(CameraExtrinsicParameters.rotation[2]), "\n",
+         std::to_string(CameraExtrinsicParameters.rotation[3]), " ", std::to_string(CameraExtrinsicParameters.rotation[4]), " ", std::to_string(CameraExtrinsicParameters.rotation[5]), "\n",
+         std::to_string(CameraExtrinsicParameters.rotation[6]), " ", std::to_string(CameraExtrinsicParameters.rotation[7]), " ", std::to_string(CameraExtrinsicParameters.rotation[8]), "\n",
          "Camera transfer: \n",
-         std::to_string(CameraExtrinsicParameters.translation[0]), " ",
-         std::to_string(CameraExtrinsicParameters.translation[1]), " ",
-         std::to_string(CameraExtrinsicParameters.translation[2]));
+         std::to_string(CameraExtrinsicParameters.translation[0]), " ", std::to_string(CameraExtrinsicParameters.translation[1]), " ", std::to_string(CameraExtrinsicParameters.translation[2]));
 }
 
 int PicoZenseHandler::SavePCD(const std::string &filename)
@@ -479,6 +499,17 @@ void PicoZenseHandler::SetWDRDataMode()
     }
 }
 
+void PicoZenseHandler::SetBilateralNoiseFilter(bool enable)
+{
+    // Using Bilateral filter that smooths the signal and preserves strong edges
+    m_fastBiFilter = enable;
+}
+
+void PicoZenseHandler::SetBilateralUpsampling(bool enable)
+{
+    m_bilateralUpsampling = enable;
+}
+
 /*  Private Functions  */
 
 std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
@@ -561,14 +592,23 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
     p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
     
-    p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert image data to float type
+    p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert depth image data to float type
     if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
     {
         error("Images with different sizes!!!");
         return;
     }
-    // m_visualizer->removeText3D("p");
+
     pointCloudRGB->clear();
+    if (m_bilateralUpsampling)
+    {
+        //Dimension must be initialized to use 2-D indexing
+        //so will have Pointcloud organized in order to apply the bilateral Filter
+        pointCloudRGB->width = p_width;
+        pointCloudRGB->height = p_height;
+        pointCloudRGB->resize(p_width * p_height);
+    }
+    
 
     //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
     // It has be done a rotation around the z azis
@@ -577,15 +617,8 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     // q = exp[angle/2*(ax*i + ay*j + az*k)] = cos(angle/2) + (ax*i + ay*j + az*k)*sin(angle/2)
     // What will acually happen internally is that every point of the Point cloud acquired by the sensor will be sandwich multipy by q
     // in this following way --> p' = q * p * q-1
-    Eigen::Quaternionf q;
-    auto angle = M_PI;
-    q.x() = 0 * sin(angle / 2);
-    q.y() = 0 * sin(angle / 2);
-    q.z() = 1 * sin(angle / 2);
-    q.w() = 1 * std::cos(angle / 2);
-
     pointCloudRGB->sensor_orientation_ = q;
-    PointXYZRGB pToVisualize;
+
     for (int v = 0; v < p_imageDepth.rows; v += 1)
     {
         for (int u = 0; u < p_imageDepth.cols; u += 1)
@@ -601,17 +634,77 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
             p.x = (u - (float)params.cx) * p.z / (float)params.fx;
             p.y = (v - (float)params.cy) * p.z / (float)params.fy;
 
-            // Don't know why this now, consider to comment
+            // Converting to meters
             p.z = p.z / 1000;
             p.x = p.x / 1000;
             p.y = p.y / 1000;
 
-            if (v == p_imageDepth.rows / 2 && u == p_imageDepth.cols / 2)
+            if (m_bilateralUpsampling)
             {
-                pToVisualize.x = p.x;
-                pToVisualize.y = p.y;
-                pToVisualize.z = p.z;
+                pointCloudRGB->at(u, v) = p;
             }
+            else
+            {
+                pointCloudRGB->push_back(p);
+            }
+        }
+    }
+
+    if (m_bilateralUpsampling && pointCloudRGB->isOrganized())
+    {
+        pointCloudRGB = ApplyBilateralUpsampling(pointCloudRGB);
+    }
+    else
+    {
+        //Can keep it unorganized (1-D indexing)
+        //Note that using push_back it will break the organized structure in unorganized
+        pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
+        pointCloudRGB->height = 1;
+    }
+
+
+    if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
+        m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
+
+    m_visualizer->spinOnce();
+}
+
+void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, PsCameraExtrinsicParameters extrinsecParam)
+{
+    p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
+    p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
+
+    p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert depth image data to float type
+    if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
+    {
+        error("Images with different sizes!!!");
+        return;
+    }
+
+    pointCloudRGB->clear();
+    pointCloudRGB->sensor_orientation_ = q;
+
+    for (int v = 0; v < p_imageDepth.rows; v += 1)
+    {
+        for (int u = 0; u < p_imageDepth.cols; u += 1)
+        {
+            if (p_imageDepth.at<float>(v, u) == 0)
+                continue;
+            PointXYZRGB p;
+            Vec3b intensity = p_imageRGB.at<Vec3b>(v, u);
+            p.r = intensity.val[0];
+            p.g = intensity.val[1];
+            p.b = intensity.val[2];
+            p.z = p_imageDepth.at<float>(v, u);
+            //Reverting from camera coordinates to real word using Camera Projection theory
+            p.x = (u - (float)paramsDepth.cx) * p.z / (float)paramsDepth.fx;
+            p.y = (v - (float)paramsDepth.cy) * p.z / (float)paramsDepth.fy;
+
+            // Converting to meters
+            p.z = p.z / 1000;
+            p.x = p.x / 1000;
+            p.y = p.y / 1000;
+
             pointCloudRGB->push_back(p);
         }
     }
@@ -622,69 +715,67 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
         m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
 
-    // m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
 }
 
-void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
+    void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
 {
     p_image = cv::Mat(p_height, p_width, CV_16UC1, p_data);
     p_image.convertTo(p_image, CV_32F); // convert image data to float type
     if (!imageMatrix.data)
         error("No depth data");
 
-    //Dimension must be initialized to use 2-D indexing
-    // m_visualizer->removeText3D("p");
     pointCloud->clear();
 
     //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
     // It has be done a rotation around the z azis
-    Eigen::Quaternionf q;
-    auto angle = M_PI;
-    q.x() = 0 * sin(angle / 2);
-    q.y() = 0 * sin(angle / 2);
-    q.z() = 1 * sin(angle / 2);
-    q.w() = 1 * std::cos(angle / 2);
     pointCloud->sensor_orientation_ = q;
-    PointXYZ pToVisualize;
-    int zeroP = 0;
-    int nonZeroP = 0;
+
+    //Getting the world's points coordinate from the image relying on
+    //Perspective projection using homogeneous coordinates.
+    //Given a real world point as (X,Y,Z) the camera will retrieve
+    //the the pixel points (2D:u,v) such as u=X*f/Z and v=Y*f/Z
+    //As the depth camera stores inside each frame pixel (u,v) camera coords
+    //the Z value I'll calculate the 
+
     for (int v = 0; v < p_image.rows; v += 1)
     {
         for (int u = 0; u < p_image.cols; u += 1)
         {
-            if (p_image.at<float>(v, u) == 0)
-            {
-                zeroP++;
-                continue;
-            }
-            else
-                nonZeroP++;
+            if (p_image.at<float>(v, u) == 0)   continue;
             PointXYZ p;
             p.z = p_image.at<float>(v, u);
             p.x = (u - (float)params.cx) * p.z / (float)params.fx;
             p.y = (v - (float)params.cy) * p.z / (float)params.fy;
 
-            // Don't know why this now, consider to comment
+            // Converting to meters
             p.z = p.z / 1000;
             p.x = p.x / 1000;
             p.y = p.y / 1000;
 
-            if (v == p_image.rows / 2 && u == p_image.cols / 2)
-            {
-                pToVisualize.x = p.x;
-                pToVisualize.y = p.y;
-                pToVisualize.z = p.z;
-            }
             pointCloud->push_back(p);
         }
+    }
+
+    if(m_fastBiFilter)
+    {
+        //Dimension must be initialized to use 2-D indexing
+        //so will have Pointcloud organized in order to apply the bilateral Filter
+        pointCloud->width = p_width;
+        pointCloud->height = p_height;
+        pointCloud->resize(p_width * p_height);
+        pointCloud = ApplyBilateralFilter(pointCloud);
+    }
+    else
+    {
+        // Keep it unorganized so 1-D indexing
+        pointCloud->width = (uint32_t)pointCloud->points.size();
+        pointCloud->height = 1;
     }
 
     if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
         m_visualizer->addPointCloud(pointCloud, "PointCloud");
 
-    pointCloud->width = (uint32_t)pointCloud->points.size();
-    pointCloud->height = 1;
 
     // Invoke a corner detection method
     if (m_detectorHarris)
@@ -694,7 +785,6 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     else if (m_detectorISS)
         ISSCornerDetection();
 
-    // m_visualizer->addText3D(std::to_string(pToVisualize.z), pToVisualize, 0.01, 255.0, 100.0, 50.0, "p");
     m_visualizer->spinOnce();
 }
 
@@ -789,7 +879,29 @@ void PicoZenseHandler::CreateRangeImage()
     rangeImage->setUnseenToMaxRange();
 }
 
-static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico)
+PointCloud<PointXYZ>::Ptr PicoZenseHandler::ApplyBilateralFilter(PointCloud<PointXYZ>::Ptr cloud_in)
+{
+    PointCloud<PointXYZ>::Ptr cloud_out (new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::FastBilateralFilter<pcl::PointXYZ> bilateral_filter;
+    bilateral_filter.setInputCloud(cloud_in);
+    bilateral_filter.setSigmaS(5);
+    bilateral_filter.setSigmaR(0.005f);
+    bilateral_filter.filter(*cloud_out);
+    return cloud_out;
+}
+
+PointCloud<PointXYZRGB>::Ptr PicoZenseHandler::ApplyBilateralUpsampling(PointCloud<PointXYZRGB>::Ptr cloud_in)
+{
+    PointCloud<PointXYZRGB>::Ptr cloud_out(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::BilateralUpsampling<PointXYZRGB, PointXYZRGB> bilateral_upsampling;
+    bilateral_upsampling.setInputCloud(cloud_in);
+    bilateral_upsampling.setSigmaColor(15.f);
+    bilateral_upsampling.setSigmaDepth(0.5f);
+    bilateral_upsampling.process(*cloud_out);
+    return cloud_out;
+}
+
+static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void *pico)
 {
     // std::cout << "Mouse: button" << std::to_string(event.getButton()) << " type -> " << event.getType() << std::endl;
 }
@@ -838,5 +950,4 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
         // v->addLine<PointXYZ, PointXYZ>(old, novo, 0.0, 0.0, 1.0);
         // v->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 50, "line");
     }
-    // debug("Point [", std::to_string(x), ";", std::to_string(y), ";", std::to_string(z), "]");
-}
+ }

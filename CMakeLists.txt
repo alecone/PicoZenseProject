@@ -43,6 +43,8 @@ target_link_libraries(PicoZenseProject
     pcl_search
     pcl_features
     pcl_io
+    pcl_filters
+    pcl_surface
     vtkRenderingFreeType-6.3
     vtkRenderingCore-6.3
     vtkCommonExecutionModel-6.3

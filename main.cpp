@@ -3,6 +3,12 @@
 
 typedef void *(*THREADFUNCPTR)(void *);
 
+struct picoHandlers
+{
+    PicoZenseHandler *pico1;
+    PicoZenseHandler *pico2;
+};
+
 static bool stop;
 
 void mainMenu()
@@ -19,12 +25,21 @@ void settersMenu()
     info("Choose action to perform:\n1. Set Depth Range\n2. Set Color Pixel Format\n3. Set Data Mode");
     info("4. Set Threshold\n5. Set Filter\n6. Set Depth Distortion Correction\n7. Set RGB Distortion Correction");
     info("8. Set Compute Real Depth Correction\n9. Set Smoothing Filter\n10. Set Spatial Feature");
+    info("11. Apply Bilater Filter\n12. Apply Bilateral Upsampling");
     info("--------------------------------------------------");
 }
 
-void * userAction(void *picoZenseHandler)
+void *userAction(void *picoZenseHandlers)
 {
-    PicoZenseHandler *pico = static_cast<PicoZenseHandler *>(picoZenseHandler);
+    struct picoHandlers *picos = (struct picoHandlers *)picoZenseHandlers;
+    if (picos->pico1 == NULL && picos->pico2 == NULL)
+    {
+        error("PicoZenseHandlers are null, Stop it!");
+        return NULL;
+    }
+    debug("PicoZense 1: ", picos->pico1);
+    debug("PicoZense 2: ", picos->pico2);
+
     int choice;
     PsReturnStatus status;
     while (!stop)
@@ -48,7 +63,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice > -1 && choice < 9)
                 {
-                    status = pico->SetDepthRange((PsDepthRange) choice);
+                    status = picos->pico1->SetDepthRange((PsDepthRange) choice);
+                    if(picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetDepthRange((PsDepthRange)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -59,7 +78,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice > -1 && choice < 5)
                 {
-                    status = pico->SetColoPixelFormat((PsPixelFormat) choice);
+                    status = picos->pico1->SetColoPixelFormat((PsPixelFormat) choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetColoPixelFormat((PsPixelFormat)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -70,7 +93,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice == 0 || choice == 7 || choice == 11)
                 {
-                    status = pico->SetDataMode((PsDataMode)choice);
+                    status = picos->pico1->SetDataMode((PsDataMode)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetDataMode((PsDataMode)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -81,7 +108,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice > -1 && choice < 101)
                 {
-                    status = pico->SetThreshold((uint16_t)choice);
+                    status = picos->pico1->SetThreshold((uint16_t)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetThreshold((uint16_t)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -94,7 +125,11 @@ void * userAction(void *picoZenseHandler)
                 {
                     bool enable = choice % 2;
                     PsFilterType type = (PsFilterType)(choice / 2);
-                    status = pico->SetFIlter(type, enable);
+                    status = picos->pico1->SetFIlter(type, enable);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetFIlter(type, enable);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -105,7 +140,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice == 0 || choice == 1)
                 {
-                    status = pico->SetDepthDistortionCorrectionEnabled((bool)choice);
+                    status = picos->pico1->SetDepthDistortionCorrectionEnabled((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetDepthDistortionCorrectionEnabled((bool)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -116,7 +155,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice == 0 || choice == 1)
                 {
-                    status = pico->SetRGBDistortionCorrectionEnabled((bool)choice);
+                    status = picos->pico1->SetRGBDistortionCorrectionEnabled((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetRGBDistortionCorrectionEnabled((bool)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -127,7 +170,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice == 0 || choice == 1)
                 {
-                    status = pico->SetComputeRealDepthCorrectionEnabled((bool)choice);
+                    status = picos->pico1->SetComputeRealDepthCorrectionEnabled((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetComputeRealDepthCorrectionEnabled((bool)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -138,7 +185,11 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice == 0 || choice == 1)
                 {
-                    status = pico->SetSmoothingFilterEnabled((bool)choice);
+                    status = picos->pico1->SetSmoothingFilterEnabled((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetSmoothingFilterEnabled((bool)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
@@ -149,30 +200,81 @@ void * userAction(void *picoZenseHandler)
                 std::cin >> choice;
                 if (choice == 0 || choice == 1)
                 {
-                    status = pico->SetSpatialFilterEnabled((bool)choice);
+                    status = picos->pico1->SetSpatialFilterEnabled((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        status = picos->pico2->SetSpatialFilterEnabled((bool)choice);
+                    }
                 }
                 std::cin.clear();
                 std::cin.ignore(1024,'\n');
-                break;            
+                break;
+            case 11:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetBilateralNoiseFilter((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetBilateralNoiseFilter((bool)choice);
+                    }
+                }
+                std::cin.clear();
+                std::cin.ignore(1024, '\n');
+                break;
+            case 12:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetBilateralUpsampling((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetBilateralUpsampling((bool)choice);
+                    }
+                }
+                std::cin.clear();
+                std::cin.ignore(1024, '\n');
+                break;
             default:
                 break;
             }
             break;
         case 2:
-            pico->GetImu();
-            pico->GetCameraParameters();
+            picos->pico1->GetImu();
+            picos->pico1->GetCameraParameters();
+            if (picos->pico2 != NULL)
+            {
+                picos->pico2->GetImu();
+                picos->pico2->GetCameraParameters();
+            }
             break;
         case 3:
             debug("Setting PointCloud RGB/Depth mapped");
-            pico->SetPointCloudRGB();
+            picos->pico1->SetPointCloudRGB();
+            if (picos->pico2 != NULL)
+            {
+                picos->pico2->SetPointCloudRGB();
+            }
             break;
         case 4:
             debug("Setting PointCloud in classic way");
-            pico->SetPointCloudClassic();
+            picos->pico1->SetPointCloudClassic();
+            if (picos->pico2 != NULL)
+            {
+                picos->pico2->SetPointCloudClassic();
+            }
             break;
         case 5:
             debug("Setting POintCloud with WDR feature");
-            pico->SetWDRDataMode();
+            picos->pico1->SetWDRDataMode();
+            if (picos->pico2 != NULL)
+            {
+                picos->pico2->SetWDRDataMode();
+            }
             break;
 
         default:
@@ -187,26 +289,80 @@ void * userAction(void *picoZenseHandler)
 }
 
 int main(int argc, char** argv) {
-    PicoZenseHandler *pico = new PicoZenseHandler(0);
-    pico->init();
-    stop = false;
-    //Create and lunch pthread
-    pthread_t picoThread;
-    // TODO! if needed set scheduling parameters and whatever else may be needed.
-    int err = pthread_create(&picoThread, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico);
-    if (err)
-        error("Thread creation failed: ", strerror(err));
-    pthread_t menuThread;
-    err = pthread_create(&menuThread, NULL, userAction, (void *)pico);
-    if (err)
-        error("Thread creation failed: ", strerror(err));
+    int32_t devs;
+    PsGetDeviceCount(&devs);
+    debug("Found ", std::to_string(devs), (devs > 1 ? " devices attached, going to run them" : " device attached, going to run it"));
+    if (devs < 1)
+    {
+        error("There are no devices connected, connect it");
+        return 0;
+    }
+    else if (devs > 1)
+    {
+        PicoZenseHandler *pico1 = new PicoZenseHandler(0);
+        pico1->init();
+        stop = false;
+        //Create and lunch pthread
+        pthread_t picoThread1;
+        // TODO! if needed set scheduling parameters and whatever else may be needed.
+        int err = pthread_create(&picoThread1, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico1);
+        if (err)
+            error("Thread creation failed: ", strerror(err));
 
-    err = pthread_join(picoThread, NULL);
-    if (err)
-        return err;
+        PicoZenseHandler *pico2 = new PicoZenseHandler(1);
+        pico2->init();
+        stop = false;
+        //Create and lunch pthread
+        pthread_t picoThread2;
+        // TODO! if needed set scheduling parameters and whatever else may be needed.
+        err = pthread_create(&picoThread2, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico2);
+        if (err)
+            error("Thread creation failed: ", strerror(err));
+        
+        pthread_t menuThread;
+        struct picoHandlers picos;
+        picos.pico1 = pico1;
+        picos.pico2 = pico2;
+        err = pthread_create(&menuThread, NULL, userAction, (void *)&picos);
+        if (err)
+            error("Thread creation failed: ", strerror(err));
+
+        err = pthread_join(picoThread1, NULL);
+        err = pthread_join(picoThread2, NULL);
+        if (err)
+            return err;
+        else
+            stop = true;
+        err = pthread_join(menuThread, NULL);
+        delete pico1;
+    }
     else
-        stop = true;
-    err = pthread_join(menuThread, NULL);
-    delete pico;
+    {
+        PicoZenseHandler *pico = new PicoZenseHandler(0);
+        pico->init();
+        stop = false;
+        //Create and lunch pthread
+        pthread_t picoThread;
+        // TODO! if needed set scheduling parameters and whatever else may be needed.
+        int err = pthread_create(&picoThread, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico);
+        if (err)
+            error("Thread creation failed: ", strerror(err));
+        
+        pthread_t menuThread;
+        struct picoHandlers picos;
+        picos.pico1 = pico;
+        picos.pico2 = nullptr;
+        err = pthread_create(&menuThread, NULL, userAction, (void *)&picos);
+        if (err)
+            error("Thread creation failed: ", strerror(err));
+
+        err = pthread_join(picoThread, NULL);
+        if (err)
+            return err;
+        else
+            stop = true;
+        err = pthread_join(menuThread, NULL);
+        delete pico;
+    }
     return 0;
 }

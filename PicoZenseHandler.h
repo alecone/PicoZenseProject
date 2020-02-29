@@ -15,6 +15,8 @@
 #include <pcl-1.8/pcl/keypoints/harris_3d.h>
 #include <pcl-1.8/pcl/io/pcd_io.h>
 #include <pcl-1.8/pcl/keypoints/iss_3d.h>
+#include <pcl-1.8/pcl/filters/fast_bilateral.h>
+#include <pcl-1.8/pcl/surface/bilateral_upsampling.h>
 #include <PicoZense_api.h>
 #include "pthread.h"
 
@@ -39,12 +41,12 @@
 template <class... Args>
 void debug(Args... args)
 {
-    (std::cout << BOLDBLUE << ... << args) << RESET << std::endl;
+    (std::cout << BLUE << ... << args) << RESET << std::endl;
 }
 template <class... Args>
 void info(Args... args)
 {
-    (std::cout << BOLDGREEN << ... << args) << RESET << std::endl;
+    (std::cout << GREEN << ... << args) << RESET << std::endl;
 }
 template <class... Args>
 void warn(Args... args)
@@ -87,6 +89,8 @@ public:
     PsReturnStatus SetSmoothingFilterEnabled(bool enable);
     PsReturnStatus SetResolution(PsResolution resolution);
     PsReturnStatus SetSpatialFilterEnabled(bool enable);
+    void SetBilateralNoiseFilter(bool enable);
+    void SetBilateralUpsampling(bool enable);
 
     // Main PointCloud Feautures funtions
     void SetPointCloudRGB();
@@ -98,11 +102,14 @@ private:
     //Private functions
     std::string PsStatusToString(PsReturnStatus p_status);
     void PointCloudCreatorXYZ(int p_height, int p_width, cv::Mat &p_image, uint8_t *p_data, PsCameraParameters params);
+    void PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, PsCameraExtrinsicParameters extrinsecParam);
     void PointCloudCreatorXYZRGB(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params);
     void Harris3DCornerDetection();
     void NARFCorenerDetection();
     void ISSCornerDetection();
     void CreateRangeImage();
+    PointCloud<PointXYZ>::Ptr ApplyBilateralFilter(PointCloud<PointXYZ>::Ptr cloud_in);
+    PointCloud<PointXYZRGB>::Ptr ApplyBilateralUpsampling(PointCloud<PointXYZRGB>::Ptr cloud_in);
 
     //Provate members
     int32_t m_devIndex;
@@ -110,18 +117,22 @@ private:
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
     cv::Mat imageMatrix;
     cv::Mat imageMatrixRGB;
+    cv::Mat imageRGB;
     PointCloud<PointXYZ>::Ptr pointCloud = nullptr;
     PointCloud<PointXYZRGB>::Ptr pointCloudRGB = nullptr;
     pcl::RangeImage::Ptr rangeImage = nullptr;
     int32_t m_deviceIndex;
     PsDepthRange m_depthRange;
     PsDataMode m_dataMode;
+    Eigen::Quaternionf q;
     bool m_pointCloudClassic;
     bool m_pointCloudMappedRGB;
     bool m_detectorHarris;
     bool m_detectorNARF;
     bool m_detectorISS;
     bool m_wdrDepth;
+    bool m_fastBiFilter;
+    bool m_bilateralUpsampling;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H
