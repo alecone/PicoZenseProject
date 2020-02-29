@@ -430,6 +430,7 @@ void PicoZenseHandler::SetPointCloudClassic()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+        m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
         m_pointCloudMappedRGB = false;
         m_pointCloudClassic = true;
     }
@@ -455,6 +456,7 @@ void PicoZenseHandler::SetPointCloudRGB()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+        m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
         m_pointCloudClassic = false;
         m_pointCloudMappedRGB = true;
     }
@@ -666,7 +668,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
 
     if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
         m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
-    m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
 
     m_visualizer->spinOnce();
 }
