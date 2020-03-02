@@ -113,7 +113,6 @@ private:
     PointCloud<PointXYZRGB>::Ptr ApplyBilateralUpsampling(PointCloud<PointXYZRGB>::Ptr cloud_in);
 
     //Provate members
-    int32_t m_devIndex;
     // pcl::visualization::CloudViewer *m_viewer = nullptr;
     cv::Mat imageMatrix;
     cv::Mat imageMatrixRGB;

@@ -54,6 +54,7 @@ target_link_libraries(PicoZenseProject
     vtkFiltersCore-6.3
     vtkFiltersGeometry-6.3
     pthread
+    X11
 )
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

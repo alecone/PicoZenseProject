@@ -27,7 +27,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     q.y() = 0 * sin(angle / 2);
     q.z() = 1 * sin(angle / 2);
     q.w() = 1 * std::cos(angle / 2);
-    m_devIndex = devIndex;
+    m_deviceIndex = devIndex;
     m_depthRange = PsNearRange;
     m_dataMode = PsDepthAndRGB_30;
     m_pointCloudClassic = true;
@@ -40,7 +40,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_bilateralUpsampling = false;
     m_loop = true;
 
-    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888");
+    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
 }
 
 
@@ -78,6 +78,12 @@ void PicoZenseHandler::init()
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
 
+    // Introduced due to error 
+    //[xcb] Unknown sequence number while processing queue
+    //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
+    //[xcb] Aborting, sorry about that.
+
+    XInitThreads();
     status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
     {
@@ -104,7 +110,7 @@ void PicoZenseHandler::init()
     status = PsOpenDevice(m_deviceIndex);
     if (status != PsReturnStatus::PsRetOK)
     {
-        error("OpenDevice failed!");
+        error("OpenDevice failed with status ", PsStatusToString(status));
         system("pause");
         return;
     }
@@ -112,7 +118,7 @@ void PicoZenseHandler::init()
     //Set PixelFormat as PsPixelFormatBGR888 for opencv display
     PsSetColorPixelFormat(m_deviceIndex, PsPixelFormatRGB888);
 #if CUSTOM_MAPPED_DEPTH_RGB
-    PsSetResolution(m_devIndex, PsRGB_Resolution_640_480);
+    PsSetResolution(m_deviceIndex, PsRGB_Resolution_640_480);
 #endif
 
     //Set to data mode
@@ -157,8 +163,8 @@ void *PicoZenseHandler::Visualize()
 
         // Read one frame before call PsGetFrame
         status = PsReadNextFrame(m_deviceIndex);
-        if (status != PsRetOK)
-            warn("PsReadNextFrame gave ", PsStatusToString(status));
+        // if (status != PsRetOK)
+        //     warn("PsReadNextFrame gave ", PsStatusToString(status));
 
         //Get depth frame, depth frame only output in following data mode
         if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
@@ -291,7 +297,7 @@ void PicoZenseHandler::GetImu()
 
 PsReturnStatus PicoZenseHandler::SetDepthRange(PsDepthRange depthRange)
 {
-    PsReturnStatus status = PsSetDepthRange(m_devIndex, depthRange);
+    PsReturnStatus status = PsSetDepthRange(m_deviceIndex, depthRange);
     if (status != PsRetOK)
         error("PsSetDepthRange failed with error ", PsStatusToString(status));
     else
@@ -304,7 +310,7 @@ PsReturnStatus PicoZenseHandler::SetDepthRange(PsDepthRange depthRange)
 
 PsReturnStatus PicoZenseHandler::SetColoPixelFormat(PsPixelFormat pixelFormat)
 {
-    PsReturnStatus status = PsSetColorPixelFormat(m_devIndex, pixelFormat);
+    PsReturnStatus status = PsSetColorPixelFormat(m_deviceIndex, pixelFormat);
     if (status != PsRetOK)
         error("PsSetColorPixelFormat failed with error ", PsStatusToString(status));
     else
@@ -314,7 +320,7 @@ PsReturnStatus PicoZenseHandler::SetColoPixelFormat(PsPixelFormat pixelFormat)
 
 PsReturnStatus PicoZenseHandler::SetDataMode(PsDataMode dataMode)
 {
-    PsReturnStatus status = PsSetDataMode(m_devIndex, dataMode);
+    PsReturnStatus status = PsSetDataMode(m_deviceIndex, dataMode);
     if (status != PsRetOK)
         error("PsSetDataMode failed with error ", PsStatusToString(status));
     else
@@ -327,7 +333,7 @@ PsReturnStatus PicoZenseHandler::SetDataMode(PsDataMode dataMode)
 
 PsReturnStatus PicoZenseHandler::SetThreshold(uint16_t threshold)
 {
-    PsReturnStatus status = PsSetThreshold(m_devIndex, threshold);
+    PsReturnStatus status = PsSetThreshold(m_deviceIndex, threshold);
     if (status != PsRetOK)
         error("PsSetThreshold failed with error ", PsStatusToString(status));
     else
@@ -337,7 +343,7 @@ PsReturnStatus PicoZenseHandler::SetThreshold(uint16_t threshold)
 
 PsReturnStatus PicoZenseHandler::SetFIlter(PsFilterType filterType, bool enable)
 {
-    PsReturnStatus status = PsSetFilter(m_devIndex, filterType, enable);
+    PsReturnStatus status = PsSetFilter(m_deviceIndex, filterType, enable);
     if (status != PsRetOK)
         error("PsSetFilter failed with error ", PsStatusToString(status));
     else
@@ -347,7 +353,7 @@ PsReturnStatus PicoZenseHandler::SetFIlter(PsFilterType filterType, bool enable)
 
 PsReturnStatus PicoZenseHandler::SetDepthDistortionCorrectionEnabled(bool enable)
 {
-    PsReturnStatus status = PsSetDepthDistortionCorrectionEnabled(m_devIndex, enable);
+    PsReturnStatus status = PsSetDepthDistortionCorrectionEnabled(m_deviceIndex, enable);
     if (status != PsRetOK)
         error("PsSetDepthDistortionCorrectionEnabled failed with error ", PsStatusToString(status));
     else
@@ -357,7 +363,7 @@ PsReturnStatus PicoZenseHandler::SetDepthDistortionCorrectionEnabled(bool enable
 
 PsReturnStatus PicoZenseHandler::SetRGBDistortionCorrectionEnabled(bool enable)
 {
-    PsReturnStatus status = PsSetRGBDistortionCorrectionEnabled(m_devIndex, enable);
+    PsReturnStatus status = PsSetRGBDistortionCorrectionEnabled(m_deviceIndex, enable);
     if (status != PsRetOK)
         error("PsSetRGBDistortionCorrectionEnabled failed with error ", PsStatusToString(status));
     else
@@ -367,7 +373,7 @@ PsReturnStatus PicoZenseHandler::SetRGBDistortionCorrectionEnabled(bool enable)
 
 PsReturnStatus PicoZenseHandler::SetComputeRealDepthCorrectionEnabled(bool enable)
 {
-    PsReturnStatus status = PsSetComputeRealDepthCorrectionEnabled(m_devIndex, enable);
+    PsReturnStatus status = PsSetComputeRealDepthCorrectionEnabled(m_deviceIndex, enable);
     if (status != PsRetOK)
         error("PsSetComputeRealDepthCorrectionEnabled failed with error ", PsStatusToString(status));
     else
@@ -377,7 +383,7 @@ PsReturnStatus PicoZenseHandler::SetComputeRealDepthCorrectionEnabled(bool enabl
 
 PsReturnStatus PicoZenseHandler::SetSmoothingFilterEnabled(bool enable)
 {
-    PsReturnStatus status = PsSetSmoothingFilterEnabled(m_devIndex, enable);
+    PsReturnStatus status = PsSetSmoothingFilterEnabled(m_deviceIndex, enable);
     if (status != PsRetOK)
         error("PsSetSmoothingFilterEnabled failed with error ", PsStatusToString(status));
     else
@@ -387,7 +393,7 @@ PsReturnStatus PicoZenseHandler::SetSmoothingFilterEnabled(bool enable)
 
 PsReturnStatus PicoZenseHandler::SetResolution(PsResolution resolution)
 {
-    PsReturnStatus status = PsSetResolution(m_devIndex, resolution);
+    PsReturnStatus status = PsSetResolution(m_deviceIndex, resolution);
     if (status != PsRetOK)
         error("PsSetResolution failed with error ", PsStatusToString(status));
     else
@@ -397,7 +403,7 @@ PsReturnStatus PicoZenseHandler::SetResolution(PsResolution resolution)
 
 PsReturnStatus PicoZenseHandler::SetSpatialFilterEnabled(bool enable)
 {
-    PsReturnStatus status = PsSetSpatialFilterEnabled(m_devIndex, enable);
+    PsReturnStatus status = PsSetSpatialFilterEnabled(m_deviceIndex, enable);
     if (status != PsRetOK)
         error("PsSetSpatialFilterEnabled failed with error ", PsStatusToString(status));
     else
