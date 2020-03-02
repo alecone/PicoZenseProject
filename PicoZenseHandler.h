@@ -72,6 +72,7 @@ public:
     void init();
     int SavePCD(const std::string &filename);
     pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
+    pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
 
     // Getters PicoZense Params
     void GetCameraParameters();
@@ -114,7 +115,6 @@ private:
     //Provate members
     int32_t m_devIndex;
     // pcl::visualization::CloudViewer *m_viewer = nullptr;
-    pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
     cv::Mat imageMatrix;
     cv::Mat imageMatrixRGB;
     cv::Mat imageRGB;

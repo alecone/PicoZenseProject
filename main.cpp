@@ -17,6 +17,7 @@ void mainMenu()
     info("Menu. Choose an option");
     info("1. Tweak PicoZense camera parameters\n2. Get PicoZense camera parameters");
     info("3. Toggle RGB PointCloud\n4. Toggle 'Classic B&W' PointCloud\n5. Toggle WDR PointCloud");
+    info("6. Set NARF Features detections");
     info("**************************************************\n");
 }
 void settersMenu()
@@ -275,6 +276,21 @@ void *userAction(void *picoZenseHandlers)
             {
                 picos->pico2->SetWDRDataMode();
             }
+            break;
+        case 6:
+            // Prompting user to set NAFT feature detection
+            info("0. Disable\n1. Enable");
+            std::cin >> choice;
+            if (choice == 0 || choice == 1)
+            {
+                picos->pico1->SetFeatureDetection((bool)choice);
+                if (picos->pico2 != NULL)
+                {
+                    picos->pico2->SetFeatureDetection((bool)choice);
+                }
+            }
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
             break;
 
         default:

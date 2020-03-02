@@ -10,7 +10,7 @@ using namespace Eigen;
 
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
-static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer);
+static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico);
 static bool m_loop;
 static PointXYZ old;
 
@@ -584,7 +584,7 @@ pcl::visualization::PCLVisualizer::Ptr PicoZenseHandler::InitializeInterations()
 
     viewer->registerKeyboardCallback(keyboardEventHandler, (void *)this);
     viewer->registerMouseCallback(mouseEventHandler, (void *)this);
-    viewer->registerPointPickingCallback(pointEventHandler, (void *)m_visualizer.get());
+    viewer->registerPointPickingCallback(pointEventHandler, (void *)this);
 
     return (viewer);
 }
@@ -835,13 +835,52 @@ void PicoZenseHandler::NARFCorenerDetection()
     // Input is a range image, output the indices of the keypoints See B. Steder, R. B. Rusu, K. Konolige, and W. Burgard Point Feature Extraction
     // on 3D Range Scans Taking into Account Object Boundaries In Proc. of the IEEE Int. Conf. on Robotics &Automation (ICRA). 2011.
     // http://ais.informatik.uni-freiburg.de/publications/papers/steder11icra.pdf
-    debug("1");
     CreateRangeImage();
     // Show range image
-    pcl::visualization::RangeImageVisualizer rangeImageWidget("Range Image");
-    debug("4");
-    rangeImageWidget.showRangeImage(*rangeImage);
-    debug("5");
+    // pcl::visualization::RangeImageVisualizer rangeImageWidget("Range Image");
+    // rangeImageWidget.showRangeImage(*rangeImage);
+    
+    //Now that rangeImage is created let's extract borders
+    pcl::RangeImage &rangeImageRef = *rangeImage;
+    pcl::RangeImageBorderExtractor borderExtractor(&rangeImageRef); 
+    pcl::PointCloud<pcl::BorderDescription> borderDescriptions;
+    borderExtractor.compute(borderDescriptions);
+    //Showing now results on viewer. Border, Veil and Showdow border
+    pcl::PointCloud<pcl::PointWithRange>::Ptr borderPointsPtr(new pcl::PointCloud<pcl::PointWithRange>),
+        veilPointsPtr(new pcl::PointCloud<pcl::PointWithRange>),
+        shadowPointsPtr(new pcl::PointCloud<pcl::PointWithRange>);
+    
+    pcl::PointCloud<pcl::PointWithRange> &borderPoints = *borderPointsPtr,
+                                         &veilPoints = *veilPointsPtr,
+                                         &shadowPoints = *shadowPointsPtr;
+    for (int y = 0; y < (int)rangeImageRef.height; ++y)
+    {
+        for (int x=0; x<(int)rangeImageRef.width; ++x)
+        {
+            if (borderDescriptions.points[y * rangeImageRef.width + x].traits[pcl::BORDER_TRAIT__OBSTACLE_BORDER])
+                borderPoints.points.push_back(rangeImageRef.points[y * rangeImageRef.width + x]);
+            if (borderDescriptions.points[y * rangeImageRef.width + x].traits[pcl::BORDER_TRAIT__VEIL_POINT])
+                veilPoints.points.push_back(rangeImageRef.points[y * rangeImageRef.width + x]);
+            if (borderDescriptions.points[y * rangeImageRef.width + x].traits[pcl::BORDER_TRAIT__SHADOW_BORDER])
+                shadowPoints.points.push_back(rangeImageRef.points[y * rangeImageRef.width + x]);
+        }
+    }
+    borderPoints.sensor_orientation_ = q;
+    veilPoints.sensor_orientation_ = q;
+    shadowPoints.sensor_orientation_ = q;
+
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> borderPointsColorHandler(borderPointsPtr, 0, 255, 0);
+    if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(borderPointsPtr, borderPointsColorHandler, "border points"))
+        m_visualizer->addPointCloud<pcl::PointWithRange>(borderPointsPtr, borderPointsColorHandler, "border points");
+    m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "border points");
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> veilPointsColorHandler(veilPointsPtr, 255, 0, 0);
+    if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(veilPointsPtr, veilPointsColorHandler, "veil points"))
+        m_visualizer->addPointCloud<pcl::PointWithRange>(veilPointsPtr, veilPointsColorHandler, "veil points");
+    m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "veil points");
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> shadowPointsColorHandler(shadowPointsPtr, 0, 255, 255);
+    if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(shadowPointsPtr, shadowPointsColorHandler, "shadow points"))
+        m_visualizer->addPointCloud<pcl::PointWithRange>(shadowPointsPtr, shadowPointsColorHandler, "shadow points");
+    m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "shadow points");
 }
 
 void PicoZenseHandler::ISSCornerDetection()
@@ -873,13 +912,18 @@ void PicoZenseHandler::ISSCornerDetection()
 void PicoZenseHandler::CreateRangeImage()
 {
     pcl::PointCloud<PointXYZ>& pCloud = *pointCloud;
-    debug("RangeImage ptr address is ", rangeImage);
-
+    float noiseLevel = 0.0;
+    float minRange = 0.0f;
+    int borderSize = 1;
     Eigen::Affine3f sceneSensorPose = Eigen::Affine3f(Eigen::Translation3f(pCloud.sensor_origin_[0], pCloud.sensor_origin_[1], pCloud.sensor_origin_[2])) * Eigen::Affine3f(pCloud.sensor_orientation_);
     rangeImage->createFromPointCloud(pCloud, pcl::deg2rad(0.5f), pcl::deg2rad(360.0f),
-                pcl::deg2rad(180.0f), sceneSensorPose, pcl::RangeImage::CAMERA_FRAME, 0.0, 0.0f, 1);
-    debug("2");
+                pcl::deg2rad(180.0f), sceneSensorPose, pcl::RangeImage::CAMERA_FRAME, noiseLevel, minRange, borderSize);
     rangeImage->setUnseenToMaxRange();
+    //If something doesn't work try this way
+    // pcl::RangeImage &range_image = *rangeImage;
+    // range_image.createFromPointCloud...
+    // range_image.integrateFarRanges (far_ranges);
+    // range_image.setUnseenToMaxRange();
 }
 
 PointCloud<PointXYZ>::Ptr PicoZenseHandler::ApplyBilateralFilter(PointCloud<PointXYZ>::Ptr cloud_in)
@@ -887,8 +931,8 @@ PointCloud<PointXYZ>::Ptr PicoZenseHandler::ApplyBilateralFilter(PointCloud<Poin
     PointCloud<PointXYZ>::Ptr cloud_out (new pcl::PointCloud<pcl::PointXYZ>);
     pcl::FastBilateralFilter<pcl::PointXYZ> bilateral_filter;
     bilateral_filter.setInputCloud(cloud_in);
-    bilateral_filter.setSigmaS(5);
-    bilateral_filter.setSigmaR(0.005f);
+    bilateral_filter.setSigmaS(2);
+    bilateral_filter.setSigmaR(0.05f);
     bilateral_filter.filter(*cloud_out);
     return cloud_out;
 }
@@ -924,14 +968,14 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
     }
 }
 
-static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *viewer)
+static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico)
 {
-    pcl::visualization::PCLVisualizer *v = static_cast<pcl::visualization::PCLVisualizer *>(viewer);
+    PicoZenseHandler *picoHandler = static_cast<PicoZenseHandler *>(pico);
     float x, y, z;
     event.getPoint(x, y, z);
+    debug("Point clicked [", x, "; ", y, "; ", z, "]");
     if (old.z == 0)
     {
-        //First point clicked, addind to vector
         old.x = x;
         old.y = y;
         old.z = z;
@@ -944,13 +988,13 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
         novo.y = y;
         novo.z = z;
 
-        double distance = std::sqrt(std::pow((old.x-novo.x), 2) +
+        double distance = std::sqrt(std::pow((old.x - novo.x), 2) +
         std::pow((old.y - novo.y), 2) + std::pow((old.z - novo.z), 2));
         debug("Distance calculated is ", std::to_string(distance));
 
         old = novo;
         //Some issues here to be fixed
-        // v->addLine<PointXYZ, PointXYZ>(old, novo, 0.0, 0.0, 1.0);
-        // v->setShapeRenderingProperties(pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 50, "line");
+        // picoHandler->m_visualizer->removeShape("line");
+        // picoHandler->m_visualizer->addLine(old, novo, 0, 1, 0, "line");
     }
  }
