@@ -17,7 +17,7 @@ void mainMenu()
     info("Menu. Choose an option");
     info("1. Tweak PicoZense camera parameters\n2. Get PicoZense camera parameters");
     info("3. Toggle RGB PointCloud\n4. Toggle 'Classic B&W' PointCloud\n5. Toggle WDR PointCloud");
-    info("6. Set NARF Features detections");
+    info("6. Set NARF Features detections\n99. Save PointCloud as pcd file");
     info("**************************************************\n");
 }
 void settersMenu()
@@ -292,6 +292,9 @@ void *userAction(void *picoZenseHandlers)
             std::cin.clear();
             std::cin.ignore(1024, '\n');
             break;
+        case 99:
+            picos->pico1->SavePCD();
+            break;
 
         default:
             warn("Invalid option!", std::to_string(choice));
@@ -315,6 +318,12 @@ int main(int argc, char** argv) {
     }
     else if (devs > 1)
     {
+        // Introduced due to error
+        //[xcb] Unknown sequence number while processing queue
+        //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
+        //[xcb] Aborting, sorry about that.
+        int status = XInitThreads();
+        info("XInitThreads returned ", std::to_string(status));
         PicoZenseHandler *pico1 = new PicoZenseHandler(0);
         pico1->init();
         stop = false;

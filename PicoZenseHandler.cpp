@@ -78,12 +78,6 @@ void PicoZenseHandler::init()
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
 
-    // Introduced due to error 
-    //[xcb] Unknown sequence number while processing queue
-    //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
-    //[xcb] Aborting, sorry about that.
-
-    XInitThreads();
     status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
     {
@@ -150,6 +144,12 @@ void *PicoZenseHandler::Visualize()
     if (status != PsRetOK)
         debug("PsGetCameraExtrinsicParameters failed with error ", PsStatusToString(status));
 
+    Matrix3d R;
+    R << CameraExtrinsicParameters.rotation[0], CameraExtrinsicParameters.rotation[1], CameraExtrinsicParameters.rotation[2],
+        CameraExtrinsicParameters.rotation[3], CameraExtrinsicParameters.rotation[4], CameraExtrinsicParameters.rotation[5],
+        CameraExtrinsicParameters.rotation[6], CameraExtrinsicParameters.rotation[7], CameraExtrinsicParameters.rotation[8];
+    Vector3d t;
+    t << CameraExtrinsicParameters.translation[0], CameraExtrinsicParameters.translation[1], CameraExtrinsicParameters.translation[2];
 
     // Main loop
     while (m_loop)
@@ -163,8 +163,12 @@ void *PicoZenseHandler::Visualize()
 
         // Read one frame before call PsGetFrame
         status = PsReadNextFrame(m_deviceIndex);
-        // if (status != PsRetOK)
-        //     warn("PsReadNextFrame gave ", PsStatusToString(status));
+        if (status != PsRetOK)
+        {
+            warn("PsReadNextFrame gave ", PsStatusToString(status));
+            usleep(50000);
+            continue;
+        }
 
         //Get depth frame, depth frame only output in following data mode
         if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
@@ -178,7 +182,7 @@ void *PicoZenseHandler::Visualize()
             {
                 //Generate and display PointCloud
 #if CUSTOM_MAPPED_DEPTH_RGB
-                PointCloudMapRGBDepthCustom(depthFrame.height, depthFrame.width, imageRGB, imageMatrix, rgbFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters, rgbCameraParameters, CameraExtrinsicParameters);
+                PointCloudMapRGBDepthCustom(depthFrame.height, depthFrame.width, imageRGB, imageMatrix, rgbFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters, rgbCameraParameters, R, t);
 #else
                 PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
 #endif
@@ -273,8 +277,13 @@ void PicoZenseHandler::GetCameraParameters()
          std::to_string(CameraExtrinsicParameters.translation[0]), " ", std::to_string(CameraExtrinsicParameters.translation[1]), " ", std::to_string(CameraExtrinsicParameters.translation[2]));
 }
 
-int PicoZenseHandler::SavePCD(const std::string &filename)
+int PicoZenseHandler::SavePCD()
 {
+    time_t now = time(0);
+    char *dt = ctime(&now);
+    std::string filename(PCD_FILE_PATH);
+    filename.append(dt);
+    filename.append(".pcd");
     pcl::PCDWriter w;
     debug("Going to write");
     int ret = w.write(filename, *pointCloud);
@@ -669,6 +678,17 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
         pointCloudRGB->height = 1;
     }
+    
+    // // Create a KD-Tree
+    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+
+    // // Output has the PointNormal type in order to store the normals calculated by MLS
+    // pcl::PointCloud<pcl::PointNormal> mls_points;
+
+    // // Init object (second point type is for the normals, even if unused)
+    // pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointNormal> mls;
+
+    // mls.setComputeNormals(true);
 
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
 
@@ -678,17 +698,23 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     m_visualizer->spinOnce();
 }
 
-void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, PsCameraExtrinsicParameters extrinsecParam)
+void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, Matrix3d R, Vector3d t)
 {
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
     p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
 
     p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert depth image data to float type
+    //Consider to skip this check if can be done something better
+    //like upsampling the pointcloud
     if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
     {
         error("Images with different sizes!!!");
         return;
     }
+    
+    //1. Find the P_w from the depth image applying the Perspective Projection
+    //2. Find the correspective (u,v) coordinates from RGB frame applying the Perspective Projection
+    //3. Apply to the point of step 1 the RGB value of step 2
 
     pointCloudRGB->clear();
     pointCloudRGB->sensor_orientation_ = q;
@@ -700,14 +726,25 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
             if (p_imageDepth.at<float>(v, u) == 0)
                 continue;
             PointXYZRGB p;
-            Vec3b intensity = p_imageRGB.at<Vec3b>(v, u);
+            //Reverting from camera coordinates to real word using Camera Projection theory
+            //ku and kv are 1 as the PAR = DAR/SAR = 1 (Dispay Aspect Ratio/Storage Aspect Ratio) = (4/3 // 640/480)
+            p.z = p_imageDepth.at<float>(v, u);
+            p.x = (u - (float)paramsDepth.cx) * p.z / (float)paramsDepth.fx;
+            p.y = (v - (float)paramsDepth.cy) * p.z / (float)paramsDepth.fy;
+            //Applying estrinsec parameter will shift the coord sys to the global one 
+            //which means the coord sys of the RGB camera (the left one)
+            Vector3d Pc;
+            Pc << p.x, p.y, p.z;
+            Vector3d PRGBCoord = R.inverse()*(Pc - t);
+            
+            //Now these points are expressed in real word coord system(the left -RGB- camera)
+            int ur = (int)((PRGBCoord[0] * paramsRGB.fx + PRGBCoord[2] * paramsRGB.cx) / PRGBCoord[2]);
+            int vr = (int)((PRGBCoord[1] * paramsRGB.fy + PRGBCoord[2] * paramsRGB.cy) / PRGBCoord[2]);
+
+            Vec3b intensity = p_imageRGB.at<Vec3b>(vr, ur);
             p.r = intensity.val[0];
             p.g = intensity.val[1];
             p.b = intensity.val[2];
-            p.z = p_imageDepth.at<float>(v, u);
-            //Reverting from camera coordinates to real word using Camera Projection theory
-            p.x = (u - (float)paramsDepth.cx) * p.z / (float)paramsDepth.fx;
-            p.y = (v - (float)paramsDepth.cy) * p.z / (float)paramsDepth.fy;
 
             // Converting to meters
             p.z = p.z / 1000;
@@ -745,7 +782,8 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
     //Given a real world point as (X,Y,Z) the camera will retrieve
     //the the pixel points (2D:u,v) such as u=X*f/Z and v=Y*f/Z
     //As the depth camera stores inside each frame pixel (u,v) camera coords
-    //the Z value I'll calculate the 
+    //the Z value I'll calculate the (x, y) pair according to the camera sys coord.
+    //N.B. I'm taking into account also the pixelization process of objects
 
     for (int v = 0; v < p_image.rows; v += 1)
     {
@@ -973,7 +1011,6 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
         // Free what allocated
     }
 }
-
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico)
 {
     PicoZenseHandler *picoHandler = static_cast<PicoZenseHandler *>(pico);
@@ -982,6 +1019,7 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
     debug("Point clicked [", x, "; ", y, "; ", z, "]");
     if (old.z == 0)
     {
+        //First time clicking
         old.x = x;
         old.y = y;
         old.z = z;
