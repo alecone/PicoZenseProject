@@ -70,8 +70,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetDepthRange((PsDepthRange)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 2:
                 // Prompting user to choose Pixel Format
@@ -85,8 +83,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetColoPixelFormat((PsPixelFormat)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 3:
                 // Prompting user to choose data mode
@@ -100,8 +96,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetDataMode((PsDataMode)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 4:
                 // Prompting user to set threshold
@@ -115,8 +109,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetThreshold((uint16_t)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 5:
                 // Prompting user to set filter
@@ -132,8 +124,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetFIlter(type, enable);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 6:
                 // Prompting user to depth distortion correction
@@ -147,8 +137,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetDepthDistortionCorrectionEnabled((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 7:
                 // Prompting user to rgb distortion correction
@@ -162,8 +150,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetRGBDistortionCorrectionEnabled((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 8:
                 // Prompting user to Compute Real Depth Correction
@@ -177,8 +163,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetComputeRealDepthCorrectionEnabled((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 9:
                 // Prompting user to set smoothing filter
@@ -192,8 +176,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetSmoothingFilterEnabled((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 10:
                 // Prompting user to set spatial feature
@@ -207,8 +189,6 @@ void *userAction(void *picoZenseHandlers)
                         status = picos->pico2->SetSpatialFilterEnabled((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024,'\n');
                 break;
             case 11:
                 // Prompting user to set spatial feature
@@ -222,8 +202,6 @@ void *userAction(void *picoZenseHandlers)
                         picos->pico2->SetBilateralNoiseFilter((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024, '\n');
                 break;
             case 12:
                 // Prompting user to set spatial feature
@@ -237,8 +215,6 @@ void *userAction(void *picoZenseHandlers)
                         picos->pico2->SetBilateralUpsampling((bool)choice);
                     }
                 }
-                std::cin.clear();
-                std::cin.ignore(1024, '\n');
                 break;
             default:
                 break;
@@ -279,6 +255,8 @@ void *userAction(void *picoZenseHandlers)
             break;
         case 6:
             // Prompting user to set NAFT feature detection
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
             info("0. Disable\n1. Enable");
             std::cin >> choice;
             if (choice == 0 || choice == 1)
@@ -289,8 +267,6 @@ void *userAction(void *picoZenseHandlers)
                     picos->pico2->SetFeatureDetection((bool)choice);
                 }
             }
-            std::cin.clear();
-            std::cin.ignore(1024, '\n');
             break;
         case 99:
             picos->pico1->SavePCD();

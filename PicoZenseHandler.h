@@ -75,7 +75,7 @@ public:
 
     void *Visualize();
     void init();
-    int SavePCD();
+    void SavePCD();
     pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
 
@@ -137,6 +137,7 @@ private:
     bool m_wdrDepth;
     bool m_fastBiFilter;
     bool m_bilateralUpsampling;
+    bool m_save;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H

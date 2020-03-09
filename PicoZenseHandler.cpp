@@ -38,6 +38,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_detectorISS = false;
     m_fastBiFilter = false;
     m_bilateralUpsampling = false;
+    m_save = false;
     m_loop = true;
 
     info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
@@ -277,17 +278,9 @@ void PicoZenseHandler::GetCameraParameters()
          std::to_string(CameraExtrinsicParameters.translation[0]), " ", std::to_string(CameraExtrinsicParameters.translation[1]), " ", std::to_string(CameraExtrinsicParameters.translation[2]));
 }
 
-int PicoZenseHandler::SavePCD()
+void PicoZenseHandler::SavePCD()
 {
-    time_t now = time(0);
-    char *dt = ctime(&now);
-    std::string filename(PCD_FILE_PATH);
-    filename.append(dt);
-    filename.append(".pcd");
-    pcl::PCDWriter w;
-    debug("Going to write");
-    int ret = w.write(filename, *pointCloud);
-    return ret;
+    m_save = true;
 }
 
 void PicoZenseHandler::GetImu()
@@ -667,6 +660,19 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         }
     }
 
+    if (m_save)
+    {
+        time_t now = time(0);
+        char *dt = ctime(&now);
+        std::string filename(PCD_FILE_PATH);
+        filename.append(dt);
+        filename.append(".pcd");
+        pcl::PCDWriter w;
+        debug("Going to write");
+        w.write(filename, *pointCloudRGB);
+        m_save = false;
+    }
+
     if (m_bilateralUpsampling && pointCloudRGB->isOrganized())
     {
         pointCloudRGB = ApplyBilateralUpsampling(pointCloudRGB);
@@ -818,6 +824,19 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
         // Keep it unorganized so 1-D indexing
         pointCloud->width = (uint32_t)pointCloud->points.size();
         pointCloud->height = 1;
+    }
+
+    if (m_save)
+    {
+        time_t now = time(0);
+        char *dt = ctime(&now);
+        std::string filename(PCD_FILE_PATH);
+        filename.append(dt);
+        filename.append(".pcd");
+        pcl::PCDWriter w;
+        w.write(filename, *pointCloud);
+        debug("Saved!");
+        m_save = false;
     }
 
     if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
