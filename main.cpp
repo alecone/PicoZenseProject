@@ -26,7 +26,9 @@ void settersMenu()
     info("Choose action to perform:\n1. Set Depth Range\n2. Set Color Pixel Format\n3. Set Data Mode");
     info("4. Set Threshold\n5. Set Filter\n6. Set Depth Distortion Correction\n7. Set RGB Distortion Correction");
     info("8. Set Compute Real Depth Correction\n9. Set Smoothing Filter\n10. Set Spatial Feature");
-    info("11. Apply Bilater Filter\n12. Apply Bilateral Upsampling");
+    info("11. Apply Bilater Filter (on PointCloud)\n12. Apply Bilateral Upsampling\n13. Set Normalized Box Filter (OpneCV)");
+    info("14. Set Gaussian Filter (OpneCV)\n15. Set Bilater Filter (OpneCV)\n16. Set StatisticalOutlierRemoval FIlter (OpneCV)");
+    info("17. Set RadiusOutlier Filter (OpneCV)");
     info("--------------------------------------------------");
 }
 
@@ -213,6 +215,71 @@ void *userAction(void *picoZenseHandlers)
                     if (picos->pico2 != NULL)
                     {
                         picos->pico2->SetBilateralUpsampling((bool)choice);
+                    }
+                }
+                break;
+            case 13:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetNormalizedBoxFilter((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetNormalizedBoxFilter((bool)choice);
+                    }
+                }
+                break;
+            case 14:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetGaussinFilter((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetGaussinFilter((bool)choice);
+                    }
+                }
+                break;
+            case 15:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetBilateralFilter((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetBilateralFilter((bool)choice);
+                    }
+                }
+                break;
+            case 16:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetStatisticalOutlierRemoval((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetStatisticalOutlierRemoval((bool)choice);
+                    }
+                }
+                break;
+            case 17:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetRadialOutlierRemoval((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetRadialOutlierRemoval((bool)choice);
                     }
                 }
                 break;

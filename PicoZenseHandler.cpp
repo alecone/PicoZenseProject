@@ -8,11 +8,19 @@ using namespace Eigen;
 
 #define CUSTOM_MAPPED_DEPTH_RGB     0
 
+//Global variables
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico);
 static bool m_loop;
+static bool m_pause;
 static PointXYZ old;
+static int KERNEL_LENGTH = 15;  // This might be tuned
+static int KERNEL_LENGTH_BILATREL = 15; //See function explanation
+static double SIGMA_X = 1.0;
+static double SIGMA_Y = 1.0;
+static double SIGMA_COLOR = 50;
+static double SIGMA_SPACE = 75;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 {
@@ -39,7 +47,13 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_fastBiFilter = false;
     m_bilateralUpsampling = false;
     m_save = false;
+    m_normalizedBoxFilter = false;
+    m_gaussianFilter = false;
+    m_bilateralFilter = false;
+    m_stattisticalOutlierRemoval = false;
+    m_radialOutlierRemoval = false;
     m_loop = true;
+    m_pause = false;
 
     info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
 }
@@ -155,6 +169,14 @@ void *PicoZenseHandler::Visualize()
     // Main loop
     while (m_loop)
     {
+        if (m_pause)
+        {
+            while (m_pause)
+            {
+                m_visualizer->spinOnce();
+                usleep(100000);
+            }
+        }
         PsFrame depthFrame = {0};
         PsFrame wdrDepthFrame = {0};
         PsFrame mappedRGBFrame = {0};
@@ -520,6 +542,31 @@ void PicoZenseHandler::SetBilateralUpsampling(bool enable)
     m_bilateralUpsampling = enable;
 }
 
+void PicoZenseHandler::SetNormalizedBoxFilter(bool enable)
+{
+    m_normalizedBoxFilter = enable;
+}
+
+void PicoZenseHandler::SetGaussinFilter(bool enable)
+{
+    m_gaussianFilter = enable;
+}
+
+void PicoZenseHandler::SetBilateralFilter(bool enable)
+{
+    m_bilateralFilter = enable;
+}
+
+void PicoZenseHandler::SetStatisticalOutlierRemoval(bool enable)
+{
+    m_stattisticalOutlierRemoval = enable;
+}
+
+void PicoZenseHandler::SetRadialOutlierRemoval(bool enable)
+{
+    m_radialOutlierRemoval = enable;
+}
+
 /*  Private Functions  */
 
 std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
@@ -609,6 +656,31 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         return;
     }
 
+    if (m_normalizedBoxFilter)
+    {
+        //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
+        cv::Mat postProc = p_imageRGB.clone();
+        blur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
+        p_imageRGB = postProc;
+    }
+    else if (m_gaussianFilter)
+    {
+        //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
+        cv::Mat postProc = p_imageRGB.clone();
+        GaussianBlur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
+        p_imageRGB = postProc;
+    }
+    else if (m_bilateralFilter)
+    {
+        // In an analogous way as the Gaussian filter, the bilateral filter also considers the neighboring pixels with
+        // weights assigned to each of them. These weights have two components, the first of which is the same weighting
+        // used by the Gaussian filter. The second component takes into account the difference in intensity between
+        // the neighboring pixels and the evaluated one. Smooth but enhance edges
+        cv::Mat postProc = p_imageRGB.clone();
+        bilateralFilter(p_imageRGB, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
+        p_imageRGB = postProc;
+    }
+
     pointCloudRGB->clear();
     if (m_bilateralUpsampling)
     {
@@ -684,7 +756,34 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
         pointCloudRGB->height = 1;
     }
+
+    if (m_stattisticalOutlierRemoval)
+    {
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
+        // Create the filtering object
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
+        sor.setInputCloud(pointCloudRGB);
+        // Must be tuned
+        sor.setMeanK(50);
+        sor.setStddevMulThresh(1.0);
+        // sor.setUserFilterValue(/*The mean of the neighbors*/)
+        sor.filter(*cloud_filtered);
+        pointCloudRGB = cloud_filtered;
+    }
+    else if (m_radialOutlierRemoval)
+    {
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> outrem;
+        // build the filter
+        outrem.setInputCloud(pointCloudRGB);
+        outrem.setRadiusSearch(0.8);
+        outrem.setMinNeighborsInRadius(2);
+        // outrem.setUserFilterValue();
+        outrem.filter(*cloud_filtered);
+        pointCloudRGB = cloud_filtered;
+    }
     
+    // Moving LeastSquare filter on pointCloud
     // // Create a KD-Tree
     // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
 
@@ -717,7 +816,32 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
         error("Images with different sizes!!!");
         return;
     }
-    
+
+    if (m_normalizedBoxFilter)
+    {
+        //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
+        cv::Mat postProc = p_imageRGB.clone();
+        blur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
+        p_imageRGB = postProc;
+    }
+    else if (m_gaussianFilter)
+    {
+        //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
+        cv::Mat postProc = p_imageRGB.clone();
+        GaussianBlur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
+        p_imageRGB = postProc;
+    }
+    else if (m_bilateralFilter)
+    {
+        // In an analogous way as the Gaussian filter, the bilateral filter also considers the neighboring pixels with
+        // weights assigned to each of them. These weights have two components, the first of which is the same weighting
+        // used by the Gaussian filter. The second component takes into account the difference in intensity between
+        // the neighboring pixels and the evaluated one. Smooth but enhance edges
+        cv::Mat postProc = p_imageRGB.clone();
+        bilateralFilter(p_imageRGB, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
+        p_imageRGB = postProc;
+    }
+
     //1. Find the P_w from the depth image applying the Perspective Projection
     //2. Find the correspective (u,v) coordinates from RGB frame applying the Perspective Projection
     //3. Apply to the point of step 1 the RGB value of step 2
@@ -764,18 +888,69 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
     pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
     pointCloudRGB->height = 1;
 
+    if (m_stattisticalOutlierRemoval)
+    {
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
+        // Create the filtering object
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
+        sor.setInputCloud(pointCloudRGB);
+        // Must be tuned
+        sor.setMeanK(50);
+        sor.setStddevMulThresh(1.0);
+        // sor.setUserFilterValue(/*The mean of the neighbors*/)
+        sor.filter(*cloud_filtered);
+        pointCloudRGB = cloud_filtered;
+    }
+    else if (m_radialOutlierRemoval)
+    {
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> outrem;
+        // build the filter
+        outrem.setInputCloud(pointCloudRGB);
+        outrem.setRadiusSearch(0.8);
+        outrem.setMinNeighborsInRadius(2);
+        // outrem.setUserFilterValue();
+        outrem.filter(*cloud_filtered);
+        pointCloudRGB = cloud_filtered;
+    }
+
     if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
         m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
 
     m_visualizer->spinOnce();
 }
 
-    void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
+void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
 {
     p_image = cv::Mat(p_height, p_width, CV_16UC1, p_data);
     p_image.convertTo(p_image, CV_32F); // convert image data to float type
     if (!imageMatrix.data)
         error("No depth data");
+
+    if (m_normalizedBoxFilter)
+    {
+        //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
+        cv::Mat postProc = p_image.clone();
+        blur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
+        p_image = postProc;
+    }
+    else if (m_gaussianFilter)
+    {
+        //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
+        cv::Mat postProc = p_image.clone();
+        GaussianBlur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
+        p_image = postProc;
+    }
+    else if (m_bilateralFilter)
+    {
+        // In an analogous way as the Gaussian filter, the bilateral filter also considers the neighboring pixels with
+        // weights assigned to each of them. These weights have two components, the first of which is the same weighting
+        // used by the Gaussian filter. The second component takes into account the difference in intensity between
+        // the neighboring pixels and the evaluated one. Smooth but enhance edges
+        cv::Mat postProc = p_image.clone();
+        bilateralFilter(p_image, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
+        p_image = postProc;
+    }
 
     pointCloud->clear();
 
@@ -837,6 +1012,32 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
         w.write(filename, *pointCloud);
         debug("Saved!");
         m_save = false;
+    }
+
+    if (m_stattisticalOutlierRemoval)
+    {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+        // Create the filtering object
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+        sor.setInputCloud(pointCloud);
+        // Must be tuned
+        sor.setMeanK(25);
+        sor.setStddevMulThresh(1.0);
+        // sor.setUserFilterValue(/*The mean of the neighbors*/)
+        sor.filter(*cloud_filtered);
+        pointCloud = cloud_filtered;
+    }
+    else if (m_radialOutlierRemoval)
+    {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+        // build the filter
+        outrem.setInputCloud(pointCloud);
+        outrem.setRadiusSearch(0.8);
+        outrem.setMinNeighborsInRadius(2);
+        // outrem.setUserFilterValue();
+        outrem.filter(*cloud_filtered);
+        pointCloud = cloud_filtered;
     }
 
     if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
@@ -1021,7 +1222,7 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
     PicoZenseHandler* picoHandler = static_cast<PicoZenseHandler *>(pico);
     if (event.getKeySym() == "p" && event.keyUp())
     {
-        picoHandler->GetCameraParameters();
+        m_pause = !m_pause;
     }
     else if (event.getKeySym() == "Escape" && event.keyUp())
     {
@@ -1056,8 +1257,8 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
         debug("Distance calculated is ", std::to_string(distance));
 
         old = novo;
-        //Some issues here to be fixed
+        //Some issues here to be fixed - can't see anything
         // picoHandler->m_visualizer->removeShape("line");
-        // picoHandler->m_visualizer->addLine(old, novo, 0, 1, 0, "line");
+        // picoHandler->m_visualizer->addLine(old, novo, 10, 255, 10, "line");
     }
  }

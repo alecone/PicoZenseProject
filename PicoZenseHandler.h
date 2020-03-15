@@ -17,6 +17,8 @@
 #include <pcl-1.8/pcl/keypoints/iss_3d.h>
 #include <pcl-1.8/pcl/filters/fast_bilateral.h>
 #include <pcl-1.8/pcl/surface/bilateral_upsampling.h>
+#include <pcl-1.8/pcl/filters/statistical_outlier_removal.h>
+#include <pcl-1.8/pcl/filters/radius_outlier_removal.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/surface/mls.h>
 #include <PicoZense_api.h>
@@ -97,6 +99,11 @@ public:
     PsReturnStatus SetSpatialFilterEnabled(bool enable);
     void SetBilateralNoiseFilter(bool enable);
     void SetBilateralUpsampling(bool enable);
+    void SetNormalizedBoxFilter(bool enable);
+    void SetGaussinFilter(bool enable);
+    void SetBilateralFilter(bool enable);
+    void SetStatisticalOutlierRemoval(bool enable);
+    void SetRadialOutlierRemoval(bool enable);
 
     // Main PointCloud Feautures funtions
     void SetPointCloudRGB();
@@ -137,6 +144,11 @@ private:
     bool m_wdrDepth;
     bool m_fastBiFilter;
     bool m_bilateralUpsampling;
+    bool m_normalizedBoxFilter;
+    bool m_gaussianFilter;
+    bool m_bilateralFilter;
+    bool m_stattisticalOutlierRemoval;
+    bool m_radialOutlierRemoval;
     bool m_save;
 };
 
