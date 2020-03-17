@@ -21,6 +21,7 @@ static double SIGMA_X = 1.0;
 static double SIGMA_Y = 1.0;
 static double SIGMA_COLOR = 50;
 static double SIGMA_SPACE = 75;
+static int numSaved = 0;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
 {
@@ -52,6 +53,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_bilateralFilter = false;
     m_stattisticalOutlierRemoval = false;
     m_radialOutlierRemoval = false;
+    m_startTest = false;
     m_loop = true;
     m_pause = false;
 
@@ -460,7 +462,7 @@ void PicoZenseHandler::SetPointCloudClassic()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
+        // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
         m_pointCloudMappedRGB = false;
         m_pointCloudClassic = true;
     }
@@ -486,7 +488,7 @@ void PicoZenseHandler::SetPointCloudRGB()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
+        // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
         m_pointCloudClassic = false;
         m_pointCloudMappedRGB = true;
     }
@@ -565,6 +567,14 @@ void PicoZenseHandler::SetStatisticalOutlierRemoval(bool enable)
 void PicoZenseHandler::SetRadialOutlierRemoval(bool enable)
 {
     m_radialOutlierRemoval = enable;
+}
+
+void PicoZenseHandler::StartTest(int kernel, double sigma1, double sigma2)
+{
+    m_startTest = true;
+    m_kernel = kernel;
+    m_sigma1 = sigma1;
+    m_sigma2 = sigma2;
 }
 
 /*  Private Functions  */
@@ -927,19 +937,59 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     if (!imageMatrix.data)
         error("No depth data");
 
+    // Upsampling image
+    // pyrUp(p_image, p_image, Size(p_image.cols * 2, p_image.rows * 2));
+
     if (m_normalizedBoxFilter)
     {
         //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
         cv::Mat postProc = p_image.clone();
-        blur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
+        blur(p_image, postProc, Size(m_kernel, m_kernel), Point(-1, -1));
         p_image = postProc;
+        std::string s = "KERNEL_";
+        s.append(std::to_string(m_kernel));
+        s.append("_");
+        s.append(std::to_string(numSaved));
+        SaveDepthImage(p_image, s);
+        if (++numSaved == 100)
+        {
+            numSaved = 0;
+            m_startTest = false;
+            debug("Test Finished");
+        }
     }
     else if (m_gaussianFilter)
     {
         //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
         cv::Mat postProc = p_image.clone();
-        GaussianBlur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
+        GaussianBlur(p_image, postProc, Size(m_kernel, m_kernel), m_sigma1, m_sigma2);
         p_image = postProc;
+        std::string s = "SIGMA_";
+        std::string str = std::to_string(m_sigma1);
+        str.replace(1, 1, "_");
+        s.append(str);
+        s.append("_KERNEL_");
+        s.append(std::to_string(m_kernel));
+        s.append("_");
+        s.append(std::to_string(numSaved));
+        SaveDepthImage(p_image, s);
+        if (++numSaved == 100)
+        {
+            numSaved = 0;
+            m_kernel +=2;
+            debug("Kernel in test ", std::to_string(m_kernel));
+            if (m_kernel > 15)
+            {
+                m_kernel = 3;
+                m_sigma1 += 0.1;
+                debug("Sigma in test ", std::to_string(m_sigma1));
+                if (m_sigma1 > 2.0)
+                {
+                    m_startTest = false;
+                    debug("Test Finished");
+                }
+            }
+        }
     }
     else if (m_bilateralFilter)
     {
@@ -948,8 +998,45 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         // used by the Gaussian filter. The second component takes into account the difference in intensity between
         // the neighboring pixels and the evaluated one. Smooth but enhance edges
         cv::Mat postProc = p_image.clone();
-        bilateralFilter(p_image, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
+        bilateralFilter(p_image, postProc, m_kernel, m_sigma1, m_sigma2);
         p_image = postProc;
+        std::string s = "SIGMA_";
+        std::string str = std::to_string((int)m_sigma1);
+        s.append(str);
+        s.append("_KERNEL_");
+        s.append(std::to_string(m_kernel));
+        s.append("_");
+        s.append(std::to_string(numSaved));
+        SaveDepthImage(p_image, s);
+        if (++numSaved == 100)
+        {
+            numSaved = 0;
+            m_kernel += 2;
+            debug("Kernel in test ", std::to_string(m_kernel));
+            if (m_kernel > 15)
+            {
+                m_kernel = 3;
+                m_sigma1 += 10;
+                debug("Sigma in test ", std::to_string(m_sigma1));
+                if (m_sigma1 > 150)
+                {
+                    m_startTest = false;
+                    debug("Test Finished");
+                }
+            }
+        }
+    }
+    if (m_startTest)
+    {
+        std::string s = "ONLY_PICO_";
+        s.append(std::to_string(numSaved));
+        SaveDepthImage(p_image, s);
+        if (++numSaved == 100)
+        {
+            numSaved = 0;
+            m_startTest = false;
+            debug("Test Finished");
+        }
     }
 
     pointCloud->clear();
@@ -987,11 +1074,11 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
 
     if(m_fastBiFilter)
     {
-        //Dimension must be initialized to use 2-D indexing
+        //Dimension should be initialized to use 2-D indexing
         //so will have Pointcloud organized in order to apply the bilateral Filter
-        pointCloud->width = p_width;
-        pointCloud->height = p_height;
-        pointCloud->resize(p_width * p_height);
+        // pointCloud->width = p_width;
+        // pointCloud->height = p_height;
+        // pointCloud->resize(p_width * p_height);
         pointCloud = ApplyBilateralFilter(pointCloud);
     }
     else
@@ -1190,14 +1277,50 @@ void PicoZenseHandler::CreateRangeImage()
     // range_image.setUnseenToMaxRange();
 }
 
+float G(float x, float sigma)
+{
+    return std::exp(-(x * x) / (2 * sigma * sigma));
+}
+
 PointCloud<PointXYZ>::Ptr PicoZenseHandler::ApplyBilateralFilter(PointCloud<PointXYZ>::Ptr cloud_in)
 {
-    PointCloud<PointXYZ>::Ptr cloud_out (new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::FastBilateralFilter<pcl::PointXYZ> bilateral_filter;
-    bilateral_filter.setInputCloud(cloud_in);
-    bilateral_filter.setSigmaS(2);
-    bilateral_filter.setSigmaR(0.05f);
-    bilateral_filter.filter(*cloud_out);
+    int pnumber = (int)cloud_in->size();
+    float sigma_s = 0.02f;
+    float sigma_r = 0.05f;
+    // Output Cloud = Input Cloud
+    PointCloud<PointXYZ>::Ptr cloud_out = cloud_in;
+    // Set up KDTree
+    pcl::KdTreeFLANN<PointXYZ>::Ptr tree(new pcl::KdTreeFLANN<PointXYZ>);
+    tree->setInputCloud(cloud_in);
+    // Neighbors containers
+    std::vector<int> k_indices;
+    std::vector<float> k_distances;
+    // Main Loop
+    for (int point_id = 0; point_id < pnumber; ++point_id)
+    {
+        float BF = 0;
+        float W = 0;
+
+        tree->radiusSearch(point_id, 2 * sigma_s, k_indices, k_distances);
+
+        // For each neighbor
+        for (std::size_t n_id = 0; n_id < k_indices.size(); ++n_id)
+        {
+            float id = k_indices.at(n_id);
+            float dist = sqrt(k_distances.at(n_id));
+            float intensity_dist = std::abs(cloud_in->points[point_id].z - cloud_in->points[id].z);
+
+            float w_a = G(dist, sigma_s);
+            float w_b = G(intensity_dist, sigma_r);
+            float weight = w_a * w_b;
+
+            BF += weight * cloud_in->points[id].z;
+            W += weight;
+        }
+
+        cloud_out->points[point_id].z = BF / W;
+    }
+
     return cloud_out;
 }
 
@@ -1210,6 +1333,15 @@ PointCloud<PointXYZRGB>::Ptr PicoZenseHandler::ApplyBilateralUpsampling(PointClo
     bilateral_upsampling.setSigmaDepth(0.5f);
     bilateral_upsampling.process(*cloud_out);
     return cloud_out;
+}
+
+void PicoZenseHandler::SaveDepthImage(cv::Mat p_image, std::string &info)
+{
+    std::string filename(TEST_PATH);
+    filename.append(info);
+    filename.append(".yml");
+    FileStorage file(filename, cv::FileStorage::WRITE);
+    file << info << p_image;
 }
 
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void *pico)
@@ -1262,3 +1394,4 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
         // picoHandler->m_visualizer->addLine(old, novo, 10, 255, 10, "line");
     }
  }
+

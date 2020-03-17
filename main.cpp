@@ -17,7 +17,7 @@ void mainMenu()
     info("Menu. Choose an option");
     info("1. Tweak PicoZense camera parameters\n2. Get PicoZense camera parameters");
     info("3. Toggle RGB PointCloud\n4. Toggle 'Classic B&W' PointCloud\n5. Toggle WDR PointCloud");
-    info("6. Set NARF Features detections\n99. Save PointCloud as pcd file");
+    info("6. Set NARF Features detections\n20. Start Test\n99. Save PointCloud as pcd file");
     info("**************************************************\n");
 }
 void settersMenu()
@@ -334,6 +334,24 @@ void *userAction(void *picoZenseHandlers)
                     picos->pico2->SetFeatureDetection((bool)choice);
                 }
             }
+            break;
+        case 20:
+            //Starting acquisition test
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
+            int kernel;
+            info("Insert Kernel length");
+            std::cin >> kernel;
+            double sigma1, sigma2;
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
+            info("Insert sigma1");
+            std::cin >> sigma1;
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
+            info("Insert sigma2");
+            std::cin >> sigma2;
+            picos->pico1->StartTest(kernel, sigma1, sigma2);
             break;
         case 99:
             picos->pico1->SavePCD();

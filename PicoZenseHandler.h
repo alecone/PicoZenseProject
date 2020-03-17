@@ -43,6 +43,7 @@
 #define BOLDCYAN "\033[1m\033[36m"    /* Bold Cyan */
 #define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
 #define PCD_FILE_PATH   "/home/alecone/Documents/Università/Magistrale/Tesi/PCDs/"
+#define TEST_PATH       "/home/alecone/Documents/Università/Magistrale/Tesi/DepthImages/"
 
 template <class... Args>
 void debug(Args... args)
@@ -111,6 +112,9 @@ public:
     void SetFeatureDetection(bool enable);
     void SetWDRDataMode();
 
+    // Testing features
+    void StartTest(int kernel, double sigma1, double sigma2);
+
 private:
     //Private functions
     std::string PsStatusToString(PsReturnStatus p_status);
@@ -123,6 +127,7 @@ private:
     void CreateRangeImage();
     PointCloud<PointXYZ>::Ptr ApplyBilateralFilter(PointCloud<PointXYZ>::Ptr cloud_in);
     PointCloud<PointXYZRGB>::Ptr ApplyBilateralUpsampling(PointCloud<PointXYZRGB>::Ptr cloud_in);
+    void SaveDepthImage(cv::Mat p_image, std::string &info);
 
     //Provate members
     // pcl::visualization::CloudViewer *m_viewer = nullptr;
@@ -150,6 +155,10 @@ private:
     bool m_stattisticalOutlierRemoval;
     bool m_radialOutlierRemoval;
     bool m_save;
+    bool m_startTest;
+    int m_kernel;
+    double m_sigma1;
+    double m_sigma2;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H
