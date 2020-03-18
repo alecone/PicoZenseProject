@@ -26,9 +26,10 @@ void settersMenu()
     info("Choose action to perform:\n1. Set Depth Range\n2. Set Color Pixel Format\n3. Set Data Mode");
     info("4. Set Threshold\n5. Set Filter\n6. Set Depth Distortion Correction\n7. Set RGB Distortion Correction");
     info("8. Set Compute Real Depth Correction\n9. Set Smoothing Filter\n10. Set Spatial Feature");
-    info("11. Apply Bilater Filter (on PointCloud)\n12. Apply Bilateral Upsampling\n13. Set Normalized Box Filter (OpneCV)");
+    info("11. Apply Bilater Filter (PCL)\n12. Apply Bilateral Upsampling\n13. Set Normalized Box Filter (OpneCV)");
     info("14. Set Gaussian Filter (OpneCV)\n15. Set Bilater Filter (OpneCV)\n16. Set StatisticalOutlierRemoval FIlter (OpneCV)");
-    info("17. Set RadiusOutlier Filter (OpneCV)");
+    info("17. Set RadiusOutlier Filter (OpneCV)\n18. Set Hole Filling (PCL)");
+    info("19. Set Fast Triangolation recontraction (PCL)\n20. Set Polynomial recontraction (PCL)");
     info("--------------------------------------------------");
 }
 
@@ -280,6 +281,45 @@ void *userAction(void *picoZenseHandlers)
                     if (picos->pico2 != NULL)
                     {
                         picos->pico2->SetRadialOutlierRemoval((bool)choice);
+                    }
+                }
+                break;
+            case 18:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetMLSUpsampling((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetMLSUpsampling((bool)choice);
+                    }
+                }
+                break;
+            case 19:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetFastTriangolation((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetFastTriangolation((bool)choice);
+                    }
+                }
+                break;
+            case 20:
+                // Prompting user to set spatial feature
+                info("0. Disable\n1. Enable");
+                std::cin >> choice;
+                if (choice == 0 || choice == 1)
+                {
+                    picos->pico1->SetPolynomialReconstruction((bool)choice);
+                    if (picos->pico2 != NULL)
+                    {
+                        picos->pico2->SetPolynomialReconstruction((bool)choice);
                     }
                 }
                 break;

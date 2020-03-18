@@ -14,13 +14,17 @@
 #include <pcl-1.8/pcl/features/range_image_border_extractor.h>
 #include <pcl-1.8/pcl/keypoints/harris_3d.h>
 #include <pcl-1.8/pcl/io/pcd_io.h>
+#include <pcl-1.8/pcl/io/ply_io.h>
 #include <pcl-1.8/pcl/keypoints/iss_3d.h>
 #include <pcl-1.8/pcl/filters/fast_bilateral.h>
 #include <pcl-1.8/pcl/surface/bilateral_upsampling.h>
+#include <pcl-1.8/pcl/surface/poisson.h>
+#include <pcl-1.8/pcl/surface/gp3.h>
+#include <pcl-1.8/pcl/surface/mls.h>
 #include <pcl-1.8/pcl/filters/statistical_outlier_removal.h>
 #include <pcl-1.8/pcl/filters/radius_outlier_removal.h>
+#include <pcl-1.8/pcl/features/normal_3d_omp.h>
 #include <pcl/kdtree/kdtree_flann.h>
-#include <pcl/surface/mls.h>
 #include <PicoZense_api.h>
 #include "pthread.h"
 #include <ctime>
@@ -104,6 +108,9 @@ public:
     void SetBilateralFilter(bool enable);
     void SetStatisticalOutlierRemoval(bool enable);
     void SetRadialOutlierRemoval(bool enable);
+    void SetMLSUpsampling(bool enable);
+    void SetFastTriangolation(bool enable);
+    void SetPolynomialReconstruction(bool enable);
 
     // Main PointCloud Feautures funtions
     void SetPointCloudRGB();
@@ -123,6 +130,11 @@ private:
     void CreateRangeImage();
     PointCloud<PointXYZ>::Ptr ApplyBilateralFilter(PointCloud<PointXYZ>::Ptr cloud_in);
     PointCloud<PointXYZRGB>::Ptr ApplyBilateralUpsampling(PointCloud<PointXYZRGB>::Ptr cloud_in);
+    PointCloud<PointXYZ>::Ptr ApplyMLSUpsampling(PointCloud<PointXYZ>::Ptr cloud_in);
+    PointCloud<PointXYZRGB>::Ptr ApplyMLSUpsamplingRGB(PointCloud<PointXYZRGB>::Ptr cloud_in);
+
+    void PolynomialReconstructionRGB(PointCloud<PointXYZRGB>::Ptr cloud_in);
+    void FastTriangolationRGB(PointCloud<PointXYZRGB>::Ptr cloud_in);
 
     //Provate members
     // pcl::visualization::CloudViewer *m_viewer = nullptr;
@@ -150,6 +162,9 @@ private:
     bool m_stattisticalOutlierRemoval;
     bool m_radialOutlierRemoval;
     bool m_save;
+    bool m_mlsUpsampling;
+    bool m_fastTriangolation;
+    bool m_polynomialReconstraction;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H

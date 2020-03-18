@@ -37,7 +37,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     q.w() = 1 * std::cos(angle / 2);
     m_deviceIndex = devIndex;
     m_depthRange = PsNearRange;
-    m_dataMode = PsDepthAndRGB_30;
+    m_dataMode = PsWDR_Depth;
     m_pointCloudClassic = true;
     m_wdrDepth = false;
     m_pointCloudMappedRGB = false;
@@ -52,10 +52,11 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     m_bilateralFilter = false;
     m_stattisticalOutlierRemoval = false;
     m_radialOutlierRemoval = false;
+    m_mlsUpsampling = false;
     m_loop = true;
     m_pause = false;
 
-    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
+    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsWDR_Depth\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
 }
 
 
@@ -567,6 +568,20 @@ void PicoZenseHandler::SetRadialOutlierRemoval(bool enable)
     m_radialOutlierRemoval = enable;
 }
 
+void PicoZenseHandler::SetMLSUpsampling(bool enable)
+{
+    m_mlsUpsampling = enable;
+}
+
+void PicoZenseHandler::SetFastTriangolation(bool enable)
+{
+    m_fastTriangolation = enable;
+}
+
+void PicoZenseHandler::SetPolynomialReconstruction(bool enable)
+{
+    m_polynomialReconstraction = enable;
+}
 /*  Private Functions  */
 
 std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
@@ -782,21 +797,24 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         outrem.filter(*cloud_filtered);
         pointCloudRGB = cloud_filtered;
     }
+    else if(m_mlsUpsampling)
+    {
+        pointCloudRGB = ApplyMLSUpsamplingRGB(pointCloudRGB);
+    }
+    else if (m_fastTriangolation)
+    {
+        m_visualizer->removePointCloud("PointCloud");
+        FastTriangolationRGB(pointCloudRGB);
+        return;
+    }
+    else if (m_polynomialReconstraction)
+    {
+        m_visualizer->removePointCloud("PointCloud");
+        PolynomialReconstructionRGB(pointCloudRGB);
+        return;
+    }
     
-    // Moving LeastSquare filter on pointCloud
-    // // Create a KD-Tree
-    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
-
-    // // Output has the PointNormal type in order to store the normals calculated by MLS
-    // pcl::PointCloud<pcl::PointNormal> mls_points;
-
-    // // Init object (second point type is for the normals, even if unused)
-    // pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointNormal> mls;
-
-    // mls.setComputeNormals(true);
-
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
-
     if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
         m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
 
@@ -1039,6 +1057,10 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         outrem.filter(*cloud_filtered);
         pointCloud = cloud_filtered;
     }
+    else if (m_mlsUpsampling)
+    {
+        pointCloud = ApplyMLSUpsampling(pointCloud);
+    }
 
     if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
         m_visualizer->addPointCloud(pointCloud, "PointCloud");
@@ -1212,6 +1234,177 @@ PointCloud<PointXYZRGB>::Ptr PicoZenseHandler::ApplyBilateralUpsampling(PointClo
     return cloud_out;
 }
 
+PointCloud<PointXYZ>::Ptr PicoZenseHandler::ApplyMLSUpsampling(PointCloud<PointXYZ>::Ptr cloud_in)
+{
+    PointCloud<PointXYZ>::Ptr cloud_out(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+    // Output has the same type as the input one, it will be only smoothed
+    pcl::PointCloud<pcl::PointXYZ> mls_points;
+    // Init object (second point type is for the normals, even if unused)
+    pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
+
+    // Optionally, a pointer to a cloud can be provided, to be set by MLS
+    // pcl::PointCloud<pcl::Normal>::Ptr mls_normals(new pcl::PointCloud<pcl::Normal>());
+    // mls.setOutputNormals(mls_normals);
+    // Set parameters
+    mls.setInputCloud(cloud_in);
+    mls.setPolynomialFit(true);
+    mls.setSearchMethod(tree);
+    mls.setSearchRadius(0.03); //5 cm
+    // In order of efficienct: DISTINCT_CLOUD, SAMPLE_LOCAL_PLANE, RANDOM_UNIFORM_DENSITY, VOXEL_GRID_DILATION
+    mls.setUpsamplingMethod(MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ>::VOXEL_GRID_DILATION);
+    // mls.setDilationIterations();
+    mls.setDilationVoxelSize(0.001);
+    mls.setPolynomialOrder(2);
+    // Reconstruct
+    mls.process(*cloud_out);
+    return cloud_out;
+}
+
+PointCloud<PointXYZRGB>::Ptr PicoZenseHandler::ApplyMLSUpsamplingRGB(PointCloud<PointXYZRGB>::Ptr cloud_in)
+{
+    MovingLeastSquares<PointXYZRGB, PointXYZRGB> mls;
+    mls.setInputCloud(cloud_in);
+    //The larger the radius the better performace, the higher computation cost
+    mls.setSearchRadius(0.08);
+    mls.setPolynomialFit(true);
+    mls.setPolynomialOrder(2);
+    mls.setUpsamplingMethod(MovingLeastSquares<PointXYZRGB, PointXYZRGB>::VOXEL_GRID_DILATION);
+    mls.setUpsamplingRadius(0.10);
+    mls.setDilationVoxelSize(0.02);
+    mls.setUpsamplingStepSize(0.01);
+    PointCloud<PointXYZRGB>::Ptr cloud_smoothed(new PointCloud<PointXYZRGB>());
+    mls.process(*cloud_smoothed);
+
+    NormalEstimationOMP<PointXYZRGB, Normal> ne;
+    ne.setNumberOfThreads(8);
+    ne.setInputCloud(cloud_smoothed);
+    ne.setRadiusSearch(0.01);
+    Eigen::Vector4f centroid;
+    compute3DCentroid(*cloud_smoothed, centroid);
+    debug("Centroids are: ", centroid[0], ", ", centroid[1], ", ", centroid[2]);
+    ne.setViewPoint(centroid[0], centroid[1], centroid[2]);
+    PointCloud<Normal>::Ptr cloud_normals(new PointCloud<Normal>());
+    ne.compute(*cloud_normals);
+    for (size_t i = 0; i < cloud_normals->size(); ++i)
+    {
+        cloud_normals->points[i].normal_x *= -1;
+        cloud_normals->points[i].normal_y *= -1;
+        cloud_normals->points[i].normal_z *= -1;
+    }
+    PointCloud<PointXYZRGBNormal>::Ptr cloud_smoothed_normals(new PointCloud<PointXYZRGBNormal>());
+    concatenateFields(*cloud_smoothed, *cloud_normals, *cloud_smoothed_normals);
+    Poisson<PointXYZRGBNormal> poisson;
+    poisson.setDepth(9);
+    poisson.setInputCloud(cloud_smoothed_normals);
+    PolygonMesh mesh;
+    poisson.reconstruct(mesh);
+
+    time_t now = time(0);
+    char *dt = ctime(&now);
+    std::string filename(PCD_FILE_PATH);
+    filename.append("POISSON_");
+    filename.append(dt);
+    filename.append(".ply");
+    io::savePLYFile(filename, mesh);
+    debug("Saved poisson reconstraction!");
+
+    return cloud_smoothed;
+}
+
+void PicoZenseHandler::PolynomialReconstructionRGB(PointCloud<PointXYZRGB>::Ptr cloud_in)
+{
+    // Create a KD-Tree
+    pcl::search::KdTree<PointXYZRGB>::Ptr tree(new pcl::search::KdTree<PointXYZRGB>);
+
+    // Output has the PointNormal type in order to store the normals calculated by MLS
+    PointCloud<PointXYZRGBNormal> mls_points;
+
+    // Init object (second point type is for the normals, even if unused)
+    MovingLeastSquares<PointXYZRGB, PointXYZRGBNormal> mls;
+
+    mls.setComputeNormals(true);
+
+    // Set parameters
+    mls.setInputCloud(cloud_in);
+    mls.setPolynomialOrder(2);
+    mls.setSearchMethod(tree);
+    mls.setSearchRadius(0.03);
+
+    // Reconstruct
+    mls.process(mls_points);
+
+    time_t now = time(0);
+    char *dt = ctime(&now);
+    std::string filename(PCD_FILE_PATH);
+    filename.append("POLINOMIAL_");
+    filename.append(dt);
+    filename.append(".pcd");
+    io::savePCDFile(filename, mls_points);
+    debug("Saved polinomial reconstraction!");
+
+    //Find a way to visualize it
+
+}
+
+void PicoZenseHandler::FastTriangolationRGB(PointCloud<PointXYZRGB>::Ptr cloud_in)
+{
+    // Normal estimation*
+    NormalEstimation<PointXYZRGB, Normal> n;
+    PointCloud<Normal>::Ptr normals(new PointCloud<Normal>);
+    pcl::search::KdTree<PointXYZRGB>::Ptr tree(new pcl::search::KdTree<PointXYZRGB>);
+    tree->setInputCloud(cloud_in);
+    n.setInputCloud(cloud_in);
+    n.setSearchMethod(tree);
+    n.setKSearch(20);
+    n.compute(*normals);
+    //* normals should not contain the point normals + surface curvatures
+
+    // Concatenate the XYZRGB and normal fields*
+    PointCloud<PointXYZRGBNormal>::Ptr cloud_with_normals(new PointCloud<PointXYZRGBNormal>);
+    concatenateFields(*cloud_in, *normals, *cloud_with_normals);
+    //* cloud_with_normals = cloud + normals
+
+    // Create search tree*
+    pcl::search::KdTree<PointXYZRGBNormal>::Ptr tree2(new pcl::search::KdTree<PointXYZRGBNormal>);
+    tree2->setInputCloud(cloud_with_normals);
+
+    // Initialize objects
+    GreedyProjectionTriangulation<PointXYZRGBNormal> gp3;
+    PolygonMesh triangles;
+
+    // Set the maximum distance between connected points (maximum edge length)
+    gp3.setSearchRadius(0.025);
+
+    // Set typical values for the parameters
+    gp3.setMu(2.5);
+    gp3.setMaximumNearestNeighbors(100);
+    gp3.setMaximumSurfaceAngle(M_PI / 4); // 45 degrees
+    gp3.setMinimumAngle(M_PI / 18);       // 10 degrees
+    gp3.setMaximumAngle(2 * M_PI / 3);    // 120 degrees
+    gp3.setNormalConsistency(false);
+
+    // Get result
+    gp3.setInputCloud(cloud_with_normals);
+    gp3.setSearchMethod(tree2);
+    gp3.reconstruct(triangles);
+
+    // Additional vertex information
+    std::vector<int> parts = gp3.getPartIDs();
+    std::vector<int> states = gp3.getPointStates();
+
+
+    time_t now = time(0);
+    char *dt = ctime(&now);
+    std::string filename(PCD_FILE_PATH);
+    filename.append("TRIANGLES_");
+    filename.append(dt);
+    filename.append(".ply");
+    io::savePLYFile(filename, triangles);
+    debug("Saved triangles reconstraction!");
+
+    //Find a way to visualize it
+}
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void *pico)
 {
     // std::cout << "Mouse: button" << std::to_string(event.getButton()) << " type -> " << event.getType() << std::endl;
