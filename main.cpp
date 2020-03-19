@@ -399,51 +399,6 @@ int main(int argc, char** argv) {
         error("There are no devices connected, connect it");
         return 0;
     }
-    else if (devs > 1)
-    {
-        // Introduced due to error
-        //[xcb] Unknown sequence number while processing queue
-        //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
-        //[xcb] Aborting, sorry about that.
-        int status = XInitThreads();
-        info("XInitThreads returned ", std::to_string(status));
-        PicoZenseHandler *pico1 = new PicoZenseHandler(0);
-        pico1->init();
-        stop = false;
-        //Create and lunch pthread
-        pthread_t picoThread1;
-        // TODO! if needed set scheduling parameters and whatever else may be needed.
-        int err = pthread_create(&picoThread1, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico1);
-        if (err)
-            error("Thread creation failed: ", strerror(err));
-
-        PicoZenseHandler *pico2 = new PicoZenseHandler(1);
-        pico2->init();
-        stop = false;
-        //Create and lunch pthread
-        pthread_t picoThread2;
-        // TODO! if needed set scheduling parameters and whatever else may be needed.
-        err = pthread_create(&picoThread2, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico2);
-        if (err)
-            error("Thread creation failed: ", strerror(err));
-        
-        pthread_t menuThread;
-        struct picoHandlers picos;
-        picos.pico1 = pico1;
-        picos.pico2 = pico2;
-        err = pthread_create(&menuThread, NULL, userAction, (void *)&picos);
-        if (err)
-            error("Thread creation failed: ", strerror(err));
-
-        err = pthread_join(picoThread1, NULL);
-        err = pthread_join(picoThread2, NULL);
-        if (err)
-            return err;
-        else
-            stop = true;
-        err = pthread_join(menuThread, NULL);
-        delete pico1;
-    }
     else
     {
         PicoZenseHandler *pico = new PicoZenseHandler(0);

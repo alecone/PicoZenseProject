@@ -145,6 +145,7 @@ private:
     PointCloud<PointXYZRGB>::Ptr pointCloudRGB = nullptr;
     pcl::RangeImage::Ptr rangeImage = nullptr;
     int32_t m_deviceIndex;
+    int32_t m_secondaryIndex;
     PsDepthRange m_depthRange;
     PsDataMode m_dataMode;
     Eigen::Quaternionf q;

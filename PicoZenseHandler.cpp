@@ -36,6 +36,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
     q.z() = 1 * sin(angle / 2);
     q.w() = 1 * std::cos(angle / 2);
     m_deviceIndex = devIndex;
+    m_secondaryIndex = 0;
     m_depthRange = PsNearRange;
     m_dataMode = PsWDR_Depth;
     m_pointCloudClassic = true;
@@ -109,6 +110,11 @@ void PicoZenseHandler::init()
         system("pause");
         return;
     }
+    if (deviceCount == 2)
+    {
+        info("Two devices attached");
+        m_secondaryIndex = 1;
+    }
 
     //Set the Depth Range to Near through PsSetDepthRange interface
     status = PsSetDepthRange(m_deviceIndex, m_depthRange);
@@ -116,6 +122,14 @@ void PicoZenseHandler::init()
         error("PsSetDepthRange failed!");
     else
         debug("Set Depth Range to Near");
+    if (m_secondaryIndex)
+    {
+        status = PsSetDepthRange(m_secondaryIndex, m_depthRange);
+        if (status != PsReturnStatus::PsRetOK)
+            error("PsSetDepthRange failed!");
+        else
+            debug("Set Depth Range to Near");
+    }
 
     status = PsOpenDevice(m_deviceIndex);
     if (status != PsReturnStatus::PsRetOK)
@@ -124,9 +138,21 @@ void PicoZenseHandler::init()
         system("pause");
         return;
     }
+    if (m_secondaryIndex)
+    {
+        status = PsOpenDevice(m_secondaryIndex);
+        if (status != PsReturnStatus::PsRetOK)
+        {
+            error("OpenDevice failed with status ", PsStatusToString(status));
+            system("pause");
+            return;
+        }
+    }
 
     //Set PixelFormat as PsPixelFormatBGR888 for opencv display
     PsSetColorPixelFormat(m_deviceIndex, PsPixelFormatRGB888);
+    if (m_secondaryIndex)
+        PsSetColorPixelFormat(m_secondaryIndex, PsPixelFormatRGB888);
 #if CUSTOM_MAPPED_DEPTH_RGB
     PsSetResolution(m_deviceIndex, PsRGB_Resolution_640_480);
 #endif
@@ -137,6 +163,14 @@ void PicoZenseHandler::init()
     {
         std::cout << "Set DataMode Failed failed!\n";
     }
+    if (m_secondaryIndex)
+    {
+        status = PsSetDataMode(m_secondaryIndex, (PsDataMode)m_dataMode);
+        if (status != PsReturnStatus::PsRetOK)
+        {
+            std::cout << "Set DataMode Failed failed!\n";
+        }
+    }
 }
 
 void *PicoZenseHandler::Visualize()
@@ -146,19 +180,40 @@ void *PicoZenseHandler::Visualize()
     PsReturnStatus status;
 
     PsCameraParameters depthCameraParameters;
+    PsCameraParameters depthCameraParametersSecondary;
     status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &depthCameraParameters);
     if (status != PsRetOK)
         debug("PsGetCameraParameters for depth sensor failed with error ", PsStatusToString(status));
+    if (m_secondaryIndex)
+    {
+        status = PsGetCameraParameters(m_secondaryIndex, PsDepthSensor, &depthCameraParametersSecondary);
+        if (status != PsRetOK)
+            debug("PsGetCameraParameters for depth sensor failed with error ", PsStatusToString(status));
+    }
 
     PsCameraParameters rgbCameraParameters;
+    PsCameraParameters rgbCameraParametersSecondary;
     status = PsGetCameraParameters(m_deviceIndex, PsRgbSensor, &rgbCameraParameters);
     if (status != PsRetOK)
         debug("PsGetCameraParameters for RGB sensor failed with error ", PsStatusToString(status));
+    if (m_secondaryIndex)
+    {
+        status = PsGetCameraParameters(m_secondaryIndex, PsRgbSensor, &rgbCameraParametersSecondary);
+        if (status != PsRetOK)
+            debug("PsGetCameraParameters for RGB sensor failed with error ", PsStatusToString(status));
+    }
 
     PsCameraExtrinsicParameters CameraExtrinsicParameters;
+    PsCameraExtrinsicParameters CameraExtrinsicParametersSecondary;
     status = PsGetCameraExtrinsicParameters(m_deviceIndex, &CameraExtrinsicParameters);
     if (status != PsRetOK)
         debug("PsGetCameraExtrinsicParameters failed with error ", PsStatusToString(status));
+    if (m_secondaryIndex)
+    {
+        status = PsGetCameraExtrinsicParameters(m_secondaryIndex, &CameraExtrinsicParametersSecondary);
+        if (status != PsRetOK)
+            debug("PsGetCameraExtrinsicParameters failed with error ", PsStatusToString(status));
+    }
 
     Matrix3d R;
     R << CameraExtrinsicParameters.rotation[0], CameraExtrinsicParameters.rotation[1], CameraExtrinsicParameters.rotation[2],
@@ -181,15 +236,29 @@ void *PicoZenseHandler::Visualize()
         PsFrame depthFrame = {0};
         PsFrame wdrDepthFrame = {0};
         PsFrame mappedRGBFrame = {0};
+        PsFrame depthFrameSecondary = {0};
+        PsFrame wdrDepthFrameSecondary = {0};
+        PsFrame mappedRGBFrameSecondary = {0};
+
 #if CUSTOM_MAPPED_DEPTH_RGB
         PsFrame rgbFrame = {0};
 #endif // CUSTOM_MAPPED_DEPTH_RGB
 
         // Read one frame before call PsGetFrame
+        if (m_secondaryIndex)
+        {
+            status = PsReadNextFrame(m_secondaryIndex);
+            if (status != PsRetOK)
+            {
+                warn("PsReadNextFrame gave ", PsStatusToString(status), "on device #", std::to_string(m_secondaryIndex));
+                usleep(50000);
+                continue;
+            }
+        }
         status = PsReadNextFrame(m_deviceIndex);
         if (status != PsRetOK)
         {
-            warn("PsReadNextFrame gave ", PsStatusToString(status));
+            warn("PsReadNextFrame gave ", PsStatusToString(status), "on device #", std::to_string(m_deviceIndex));
             usleep(50000);
             continue;
         }
@@ -198,6 +267,8 @@ void *PicoZenseHandler::Visualize()
         if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
+            if (m_secondaryIndex)
+                PsGetFrame(m_secondaryIndex, PsDepthFrame, &depthFrameSecondary);
 #if CUSTOM_MAPPED_DEPTH_RGB
             PsGetFrame(m_deviceIndex, PsRGBFrame, &rgbFrame);
 #endif
@@ -209,6 +280,9 @@ void *PicoZenseHandler::Visualize()
                 PointCloudMapRGBDepthCustom(depthFrame.height, depthFrame.width, imageRGB, imageMatrix, rgbFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters, rgbCameraParameters, R, t);
 #else
                 PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
+                //TODO - handle both depth images
+                if (m_secondaryIndex && !m_pointCloudMappedRGB && depthFrame.pFrameData != NULL && depthFrameSecondary.pFrameData != NULL)
+                    debug("DATA IS OK");
 #endif
             }
         }
@@ -218,10 +292,15 @@ void *PicoZenseHandler::Visualize()
         if (m_dataMode == PsWDR_Depth)
         {
             PsGetFrame(m_deviceIndex, PsWDRDepthFrame, &wdrDepthFrame);
+            if (m_secondaryIndex)
+                PsGetFrame(m_secondaryIndex, PsWDRDepthFrame, &wdrDepthFrameSecondary);
             if (!m_pointCloudMappedRGB && wdrDepthFrame.pFrameData != NULL)
             {
                 //Display the WDR Depth Image
                 PointCloudCreatorXYZ(wdrDepthFrame.height, wdrDepthFrame.width, imageMatrix, wdrDepthFrame.pFrameData, depthCameraParameters);
+                //TODO - handle both depth images
+                if (m_secondaryIndex && wdrDepthFrameSecondary.pFrameData != NULL)
+                    debug("DATA IS OK");
             }
         }
 
@@ -231,12 +310,22 @@ void *PicoZenseHandler::Visualize()
         if (m_pointCloudMappedRGB && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsWDR_Depth || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsMappedRGBFrame, &mappedRGBFrame);
+            if (m_secondaryIndex)
+                PsGetFrame(m_secondaryIndex, PsMappedRGBFrame, &mappedRGBFrameSecondary);
             if (mappedRGBFrame.pFrameData != NULL)
             {
                 if (m_dataMode == PsWDR_Depth)
+                {
                     PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters);
+                    if (m_secondaryIndex && mappedRGBFrameSecondary.pFrameData != NULL)
+                        debug("DATA IS OK");
+                }
                 else
+                {
                     PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters);
+                    if (m_secondaryIndex && mappedRGBFrameSecondary.pFrameData != NULL)
+                        debug("DATA IS OK");
+                }
             }
         }
         imageMatrix.release();
@@ -247,7 +336,12 @@ void *PicoZenseHandler::Visualize()
     }
 
     status = PsCloseDevice(m_deviceIndex);
-    info("CloseDevice status: ", PsStatusToString(status));
+    info("CloseDevice status: ", PsStatusToString(status), " device #", std::to_string(m_deviceIndex));
+    if (m_secondaryIndex)
+    {
+        status = PsCloseDevice(m_secondaryIndex);
+        info("CloseDevice status: ", PsStatusToString(status), " device #", std::to_string(m_secondaryIndex));
+    }
 
     status = PsShutdown();
     info("Shutdown status: ", PsStatusToString(status));
