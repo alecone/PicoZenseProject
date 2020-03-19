@@ -6,7 +6,6 @@ using namespace cv;
 using namespace pcl;
 using namespace Eigen;
 
-#define CUSTOM_MAPPED_DEPTH_RGB     0
 
 //Global variables
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
@@ -123,9 +122,6 @@ void PicoZenseHandler::init()
 
     //Set PixelFormat as PsPixelFormatBGR888 for opencv display
     PsSetColorPixelFormat(m_deviceIndex, PsPixelFormatRGB888);
-#if CUSTOM_MAPPED_DEPTH_RGB
-    PsSetResolution(m_deviceIndex, PsRGB_Resolution_640_480);
-#endif
 
     //Set to data mode
     status = PsSetDataMode(m_deviceIndex, (PsDataMode)m_dataMode);
@@ -179,9 +175,6 @@ void *PicoZenseHandler::Visualize()
         PsFrame depthFrame = {0};
         PsFrame wdrDepthFrame = {0};
         PsFrame mappedRGBFrame = {0};
-#if CUSTOM_MAPPED_DEPTH_RGB
-        PsFrame rgbFrame = {0};
-#endif // CUSTOM_MAPPED_DEPTH_RGB
 
         // Read one frame before call PsGetFrame
         status = PsReadNextFrame(m_deviceIndex);
@@ -196,18 +189,11 @@ void *PicoZenseHandler::Visualize()
         if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
-#if CUSTOM_MAPPED_DEPTH_RGB
-            PsGetFrame(m_deviceIndex, PsRGBFrame, &rgbFrame);
-#endif
 
             if (!m_pointCloudMappedRGB && depthFrame.pFrameData != NULL)
             {
                 //Generate and display PointCloud
-#if CUSTOM_MAPPED_DEPTH_RGB
-                PointCloudMapRGBDepthCustom(depthFrame.height, depthFrame.width, imageRGB, imageMatrix, rgbFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters, rgbCameraParameters, R, t);
-#else
                 PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
-#endif
             }
         }
 
@@ -814,125 +800,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     vis_mutex.lock();
     if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
         m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
-
-    m_visualizer->spinOnce();
-    vis_mutex.unlock();
-}
-
-void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, Matrix3d R, Vector3d t)
-{
-    p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
-    p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
-
-    p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert depth image data to float type
-    //Consider to skip this check if can be done something better
-    //like upsampling the pointcloud
-    if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
-    {
-        error("Images with different sizes!!!");
-        return;
-    }
-
-    if (m_normalizedBoxFilter)
-    {
-        //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
-        cv::Mat postProc = p_imageRGB.clone();
-        blur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
-        p_imageRGB = postProc;
-    }
-    else if (m_gaussianFilter)
-    {
-        //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
-        cv::Mat postProc = p_imageRGB.clone();
-        GaussianBlur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
-        p_imageRGB = postProc;
-    }
-    else if (m_bilateralFilter)
-    {
-        // In an analogous way as the Gaussian filter, the bilateral filter also considers the neighboring pixels with
-        // weights assigned to each of them. These weights have two components, the first of which is the same weighting
-        // used by the Gaussian filter. The second component takes into account the difference in intensity between
-        // the neighboring pixels and the evaluated one. Smooth but enhance edges
-        cv::Mat postProc = p_imageRGB.clone();
-        bilateralFilter(p_imageRGB, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
-        p_imageRGB = postProc;
-    }
-
-    //1. Find the P_w from the depth image applying the Perspective Projection
-    //2. Find the correspective (u,v) coordinates from RGB frame applying the Perspective Projection
-    //3. Apply to the point of step 1 the RGB value of step 2
-
-    pointCloudRGB->clear();
-    pointCloudRGB->sensor_orientation_ = q;
-
-    for (int v = 0; v < p_imageDepth.rows; v += 1)
-    {
-        for (int u = 0; u < p_imageDepth.cols; u += 1)
-        {
-            if (p_imageDepth.at<float>(v, u) == 0)
-                continue;
-            PointXYZRGB p;
-            //Reverting from camera coordinates to real word using Camera Projection theory
-            //ku and kv are 1 as the PAR = DAR/SAR = 1 (Dispay Aspect Ratio/Storage Aspect Ratio) = (4/3 // 640/480)
-            p.z = p_imageDepth.at<float>(v, u);
-            p.x = (u - (float)paramsDepth.cx) * p.z / (float)paramsDepth.fx;
-            p.y = (v - (float)paramsDepth.cy) * p.z / (float)paramsDepth.fy;
-            //Applying estrinsec parameter will shift the coord sys to the global one 
-            //which means the coord sys of the RGB camera (the left one)
-            Vector3d Pc;
-            Pc << p.x, p.y, p.z;
-            Vector3d PRGBCoord = R.inverse()*(Pc - t);
-            
-            //Now these points are expressed in real word coord system(the left -RGB- camera)
-            int ur = (int)((PRGBCoord[0] * paramsRGB.fx + PRGBCoord[2] * paramsRGB.cx) / PRGBCoord[2]);
-            int vr = (int)((PRGBCoord[1] * paramsRGB.fy + PRGBCoord[2] * paramsRGB.cy) / PRGBCoord[2]);
-
-            Vec3b intensity = p_imageRGB.at<Vec3b>(vr, ur);
-            p.r = intensity.val[0];
-            p.g = intensity.val[1];
-            p.b = intensity.val[2];
-
-            // Converting to meters
-            p.z = p.z / 1000;
-            p.x = p.x / 1000;
-            p.y = p.y / 1000;
-
-            pointCloudRGB->push_back(p);
-        }
-    }
-
-    pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
-    pointCloudRGB->height = 1;
-
-    if (m_stattisticalOutlierRemoval)
-    {
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-        // Create the filtering object
-        pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-        sor.setInputCloud(pointCloudRGB);
-        // Must be tuned
-        sor.setMeanK(50);
-        sor.setStddevMulThresh(1.0);
-        // sor.setUserFilterValue(/*The mean of the neighbors*/)
-        sor.filter(*cloud_filtered);
-        pointCloudRGB = cloud_filtered;
-    }
-    else if (m_radialOutlierRemoval)
-    {
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-        pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> outrem;
-        // build the filter
-        outrem.setInputCloud(pointCloudRGB);
-        outrem.setRadiusSearch(0.8);
-        outrem.setMinNeighborsInRadius(2);
-        // outrem.setUserFilterValue();
-        outrem.filter(*cloud_filtered);
-        pointCloudRGB = cloud_filtered;
-    }
-
-    vis_mutex.lock();
-    if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
-        m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
 
     m_visualizer->spinOnce();
     vis_mutex.unlock();
