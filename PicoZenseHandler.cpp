@@ -13,11 +13,12 @@ static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void*
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico);
 static bool m_loop;
 static PointXYZ old;
+static boost::mutex vis_mutex;
 
-PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
+PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
-    m_visualizer = InitializeInterations();
-    m_visualizer->setBackgroundColor(0.0, 0.0, 0.0);
+    InitializeInterations(viewer);
+    m_visualizer = viewer;
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
@@ -83,7 +84,7 @@ void PicoZenseHandler::init()
     //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
     //[xcb] Aborting, sorry about that.
 
-    XInitThreads();
+    // XInitThreads();
     status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
     {
@@ -583,16 +584,11 @@ std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
 }
 
 
-pcl::visualization::PCLVisualizer::Ptr PicoZenseHandler::InitializeInterations()
+void PicoZenseHandler::InitializeInterations(pcl::visualization::PCLVisualizer::Ptr viewer)
 {
-    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
-    viewer->setBackgroundColor(0, 0, 0);
-
     viewer->registerKeyboardCallback(keyboardEventHandler, (void *)this);
     viewer->registerMouseCallback(mouseEventHandler, (void *)this);
     viewer->registerPointPickingCallback(pointEventHandler, (void *)this);
-
-    return (viewer);
 }
 
 void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params)
@@ -672,10 +668,12 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
 
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
 
+    vis_mutex.lock();
     if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
         m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
 
     m_visualizer->spinOnce();
+    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, PsCameraExtrinsicParameters extrinsecParam)
@@ -721,13 +719,15 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
     pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
     pointCloudRGB->height = 1;
 
+    vis_mutex.lock();
     if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
         m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
 
     m_visualizer->spinOnce();
+    vis_mutex.unlock();
 }
 
-    void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
+void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
 {
     p_image = cv::Mat(p_height, p_width, CV_16UC1, p_data);
     p_image.convertTo(p_image, CV_32F); // convert image data to float type
@@ -782,10 +782,6 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
         pointCloud->height = 1;
     }
 
-    if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
-        m_visualizer->addPointCloud(pointCloud, "PointCloud");
-
-
     // Invoke a corner detection method
     if (m_detectorHarris)
         Harris3DCornerDetection();
@@ -794,7 +790,12 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
     else if (m_detectorISS)
         ISSCornerDetection();
 
+    vis_mutex.lock();
+    if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
+        m_visualizer->addPointCloud(pointCloud, "PointCloud");
+
     m_visualizer->spinOnce();
+    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::Harris3DCornerDetection()

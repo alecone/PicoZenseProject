@@ -308,6 +308,8 @@ int main(int argc, char** argv) {
     int32_t devs;
     PsGetDeviceCount(&devs);
     debug("Found ", std::to_string(devs), (devs > 1 ? " devices attached, going to run them" : " device attached, going to run it"));
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
+    viewer->setBackgroundColor(0.0, 0.0, 0.0);
     if (devs < 1)
     {
         error("There are no devices connected, connect it");
@@ -315,7 +317,7 @@ int main(int argc, char** argv) {
     }
     else if (devs > 1)
     {
-        PicoZenseHandler *pico1 = new PicoZenseHandler(0);
+        PicoZenseHandler *pico1 = new PicoZenseHandler(0, viewer);
         pico1->init();
         stop = false;
         //Create and lunch pthread
@@ -325,7 +327,7 @@ int main(int argc, char** argv) {
         if (err)
             error("Thread creation failed: ", strerror(err));
 
-        PicoZenseHandler *pico2 = new PicoZenseHandler(1);
+        PicoZenseHandler *pico2 = new PicoZenseHandler(1, viewer);
         pico2->init();
         stop = false;
         //Create and lunch pthread
@@ -354,7 +356,7 @@ int main(int argc, char** argv) {
     }
     else
     {
-        PicoZenseHandler *pico = new PicoZenseHandler(0);
+        PicoZenseHandler *pico = new PicoZenseHandler(0, viewer);
         pico->init();
         stop = false;
         //Create and lunch pthread

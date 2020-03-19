@@ -65,13 +65,13 @@ using namespace cv;
 class PicoZenseHandler
 {
 public:
-    explicit PicoZenseHandler(int32_t devIndex);
+    explicit PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer);
     ~PicoZenseHandler();
 
     void *Visualize();
     void init();
     int SavePCD(const std::string &filename);
-    pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
+    void InitializeInterations(pcl::visualization::PCLVisualizer::Ptr viewer);
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
 
     // Getters PicoZense Params
