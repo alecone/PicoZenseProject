@@ -429,8 +429,6 @@ int main(int argc, char** argv) {
         if (err)
             error("Thread creation failed: ", strerror(err));
 
-        info("Waiting 5 sec before start new camera thread...");
-        sleep(5);
         PicoZenseHandler *pico2 = new PicoZenseHandler(1);
         pico2->init();
         stop = false;
