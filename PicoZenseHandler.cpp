@@ -16,6 +16,7 @@ static bool m_loop;
 static bool m_pause;
 static PointXYZ old;
 static boost::mutex vis_mutex;
+
 static int KERNEL_LENGTH = 15;  // This might be tuned
 static int KERNEL_LENGTH_BILATREL = 15; //See function explanation
 static double SIGMA_X = 1.0;
@@ -38,7 +39,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     q.w() = 1 * std::cos(angle / 2);
     m_deviceIndex = devIndex;
     m_depthRange = PsNearRange;
-    m_dataMode = PsWDR_Depth;
+    m_dataMode = PsDepthAndRGB_30;
     m_pointCloudClassic = true;
     m_wdrDepth = false;
     m_pointCloudMappedRGB = false;
@@ -169,7 +170,9 @@ void *PicoZenseHandler::Visualize()
         {
             while (m_pause)
             {
+                vis_mutex.lock();
                 m_visualizer->spinOnce();
+                vis_mutex.unlock();
                 usleep(100000);
             }
         }
@@ -345,7 +348,7 @@ PsReturnStatus PicoZenseHandler::SetDataMode(PsDataMode dataMode)
         error("PsSetDataMode failed with error ", PsStatusToString(status));
     else
     {
-        info("PsSetDataMode done");
+        info("PsSetDataMode done -> ", std::to_string(dataMode));
         m_dataMode = dataMode;
     }
     return status;
@@ -741,11 +744,14 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         time_t now = time(0);
         char *dt = ctime(&now);
         std::string filename(PCD_FILE_PATH);
+        filename.append("CAMERA_");
+        filename.append(std::to_string(m_deviceIndex));
+        filename.append("_");
         filename.append(dt);
         filename.append(".pcd");
         pcl::PCDWriter w;
-        debug("Going to write");
         w.write(filename, *pointCloudRGB);
+        debug("Saved for camera #", std::to_string(m_deviceIndex));
         m_save = false;
     }
 
@@ -1018,11 +1024,14 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         time_t now = time(0);
         char *dt = ctime(&now);
         std::string filename(PCD_FILE_PATH);
+        filename.append("CAMERA_");
+        filename.append(std::to_string(m_deviceIndex));
+        filename.append("_");
         filename.append(dt);
         filename.append(".pcd");
         pcl::PCDWriter w;
         w.write(filename, *pointCloud);
-        debug("Saved!");
+        debug("Saved for camera #", std::to_string(m_deviceIndex));
         m_save = false;
     }
 
@@ -1055,10 +1064,6 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     {
         pointCloud = ApplyMLSUpsampling(pointCloud);
     }
-
-    if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
-        m_visualizer->addPointCloud(pointCloud, "PointCloud");
-
 
     // Invoke a corner detection method
     if (m_detectorHarris)
@@ -1419,6 +1424,7 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
     else if (event.getKeySym() == "Escape" && event.keyUp())
     {
         info("Shutting down ...");
+        // add mutex here
         m_loop = false;
         // Free what allocated
     }
@@ -1449,8 +1455,5 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
         debug("Distance calculated is ", std::to_string(distance));
 
         old = novo;
-        //Some issues here to be fixed - can't see anything
-        // picoHandler->m_visualizer->removeShape("line");
-        // picoHandler->m_visualizer->addLine(old, novo, 10, 255, 10, "line");
     }
  }

@@ -377,6 +377,8 @@ void *userAction(void *picoZenseHandlers)
             break;
         case 99:
             picos->pico1->SavePCD();
+            if (picos->pico2 != NULL)
+                picos->pico2->SavePCD();
             break;
 
         default:
