@@ -392,16 +392,13 @@ void *userAction(void *picoZenseHandlers)
 
 int main(int argc, char** argv) {
     int32_t devs;
-    PsReturnStatus status = PsInitialize();
-    if (status != PsReturnStatus::PsRetOK)
-    {
-        std::cout << "PsInitialize failed!\n";
-        system("pause");
-        return 1;
-    }
 
     PsGetDeviceCount(&devs);
     debug("Found ", std::to_string(devs), (devs > 1 ? " devices attached, going to run them" : " device attached, going to run it"));
+
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
+    viewer->setBackgroundColor(0.0, 0.0, 0.0);
+    debug("[main] Viewer ptr ", viewer);
     if (devs < 1)
     {
         error("There are no devices connected, connect it");
@@ -409,18 +406,11 @@ int main(int argc, char** argv) {
     }
     else if (devs > 1)
     {
-        // Introduced due to error
-        //[xcb] Unknown sequence number while processing queue
-        //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
-        //[xcb] Aborting, sorry about that.
-        int stat = XInitThreads();
-        if (!stat)
-        {
-            warn("Failed to initialize X11 with threads. This is expected on a single core. Returned ", std::to_string(stat));
-            return 1;
-        }
-        PicoZenseHandler *pico1 = new PicoZenseHandler(0);
+        PicoZenseHandler *pico2 = new PicoZenseHandler(1, viewer);
+        PicoZenseHandler *pico1 = new PicoZenseHandler(0, viewer);
+        pico2->init();
         pico1->init();
+
         stop = false;
         //Create and lunch pthread
         pthread_t picoThread1;
@@ -429,9 +419,6 @@ int main(int argc, char** argv) {
         if (err)
             error("Thread creation failed: ", strerror(err));
 
-        PicoZenseHandler *pico2 = new PicoZenseHandler(1);
-        pico2->init();
-        stop = false;
         //Create and lunch pthread
         pthread_t picoThread2;
         // TODO! if needed set scheduling parameters and whatever else may be needed.
@@ -458,7 +445,7 @@ int main(int argc, char** argv) {
     }
     else
     {
-        PicoZenseHandler *pico = new PicoZenseHandler(0);
+        PicoZenseHandler *pico = new PicoZenseHandler(0, viewer);
         pico->init();
         stop = false;
         //Create and lunch pthread

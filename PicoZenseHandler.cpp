@@ -22,10 +22,12 @@ static double SIGMA_Y = 1.0;
 static double SIGMA_COLOR = 50;
 static double SIGMA_SPACE = 75;
 
-PicoZenseHandler::PicoZenseHandler(int32_t devIndex)
+PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
-    m_visualizer = InitializeInterations();
-    m_visualizer->setBackgroundColor(0.0, 0.0, 0.0);
+    debug("[PicoZenseHandler] Viewer ptr ", m_visualizer);
+    m_visualizer = viewer;
+    debug("[PicoZenseHandler] Viewer ptr ", m_visualizer);
+    InitializeInterations(m_visualizer);
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
@@ -89,7 +91,13 @@ PicoZenseHandler::~PicoZenseHandler()
 
 void PicoZenseHandler::init()
 {
-    PsReturnStatus status;
+    PsReturnStatus status = PsInitialize();
+    if (status != PsReturnStatus::PsRetOK)
+    {
+        error("PsInitialize failed!");
+        exit(1);
+    }
+
     int32_t deviceCount = 0;
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
@@ -630,17 +638,11 @@ std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
     return ret;
 }
 
-
-pcl::visualization::PCLVisualizer::Ptr PicoZenseHandler::InitializeInterations()
+void PicoZenseHandler::InitializeInterations(pcl::visualization::PCLVisualizer::Ptr viewer)
 {
-    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
-    viewer->setBackgroundColor(0, 0, 0);
-
     viewer->registerKeyboardCallback(keyboardEventHandler, (void *)this);
     viewer->registerMouseCallback(mouseEventHandler, (void *)this);
     viewer->registerPointPickingCallback(pointEventHandler, (void *)this);
-
-    return (viewer);
 }
 
 void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params)

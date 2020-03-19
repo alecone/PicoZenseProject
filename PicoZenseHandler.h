@@ -76,13 +76,13 @@ using namespace Eigen;
 class PicoZenseHandler
 {
 public:
-    explicit PicoZenseHandler(int32_t devIndex);
+    explicit PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer);
     ~PicoZenseHandler();
 
     void *Visualize();
     void init();
     void SavePCD();
-    pcl::visualization::PCLVisualizer::Ptr InitializeInterations();
+    void InitializeInterations(pcl::visualization::PCLVisualizer::Ptr viewer);
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
 
     // Getters PicoZense Params
