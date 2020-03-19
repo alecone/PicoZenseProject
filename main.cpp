@@ -392,12 +392,20 @@ void *userAction(void *picoZenseHandlers)
 
 int main(int argc, char** argv) {
     int32_t devs;
+    PsReturnStatus status = PsInitialize();
+    if (status != PsReturnStatus::PsRetOK)
+    {
+        std::cout << "PsInitialize failed!\n";
+        system("pause");
+        return 1;
+    }
+
     PsGetDeviceCount(&devs);
     debug("Found ", std::to_string(devs), (devs > 1 ? " devices attached, going to run them" : " device attached, going to run it"));
     if (devs < 1)
     {
         error("There are no devices connected, connect it");
-        return 0;
+        return 1;
     }
     else if (devs > 1)
     {
@@ -405,8 +413,12 @@ int main(int argc, char** argv) {
         //[xcb] Unknown sequence number while processing queue
         //[xcb] Most likely this is a multi - threaded client and XInitThreads has not been called
         //[xcb] Aborting, sorry about that.
-        int status = XInitThreads();
-        info("XInitThreads returned ", std::to_string(status));
+        int stat = XInitThreads();
+        if (!stat)
+        {
+            warn("Failed to initialize X11 with threads. This is expected on a single core. Returned ", std::to_string(stat));
+            return 1;
+        }
         PicoZenseHandler *pico1 = new PicoZenseHandler(0);
         pico1->init();
         stop = false;
@@ -417,6 +429,8 @@ int main(int argc, char** argv) {
         if (err)
             error("Thread creation failed: ", strerror(err));
 
+        info("Waiting 5 sec before start new camera thread...");
+        sleep(5);
         PicoZenseHandler *pico2 = new PicoZenseHandler(1);
         pico2->init();
         stop = false;

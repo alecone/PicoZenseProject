@@ -94,22 +94,6 @@ void PicoZenseHandler::init()
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
 
-    status = PsInitialize();
-    if (status != PsReturnStatus::PsRetOK)
-    {
-        std::cout << "PsInitialize failed!\n";
-        system("pause");
-        return;
-    }
-
-    status = PsGetDeviceCount(&deviceCount);
-    if (status != PsReturnStatus::PsRetOK)
-    {
-        error("PsGetDeviceCount failed!");
-        system("pause");
-        return;
-    }
-
     //Set the Depth Range to Near through PsSetDepthRange interface
     status = PsSetDepthRange(m_deviceIndex, m_depthRange);
     if (status != PsReturnStatus::PsRetOK)
@@ -135,7 +119,7 @@ void PicoZenseHandler::init()
     status = PsSetDataMode(m_deviceIndex, (PsDataMode)m_dataMode);
     if (status != PsReturnStatus::PsRetOK)
     {
-        std::cout << "Set DataMode Failed failed!\n";
+        warn("Set DataMode Failed failed!");
     }
 }
 
