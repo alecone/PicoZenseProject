@@ -15,6 +15,7 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
 static bool m_loop;
 static bool m_pause;
 static PointXYZ old;
+static boost::mutex vis_mutex;
 static int KERNEL_LENGTH = 15;  // This might be tuned
 static int KERNEL_LENGTH_BILATREL = 15; //See function explanation
 static double SIGMA_X = 1.0;
@@ -24,10 +25,8 @@ static double SIGMA_SPACE = 75;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
-    debug("[PicoZenseHandler] Viewer ptr ", m_visualizer);
+    InitializeInterations(viewer);
     m_visualizer = viewer;
-    debug("[PicoZenseHandler] Viewer ptr ", m_visualizer);
-    InitializeInterations(m_visualizer);
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
@@ -91,14 +90,18 @@ PicoZenseHandler::~PicoZenseHandler()
 
 void PicoZenseHandler::init()
 {
-    PsReturnStatus status = PsInitialize();
+    PsReturnStatus status;
+    int32_t deviceCount = 0;
+    // uint32_t slope = 1450;
+    // uint32_t wdrSlope = 4400;
+
+    status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
     {
         error("PsInitialize failed!");
         exit(1);
     }
 
-    int32_t deviceCount = 0;
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
 
@@ -801,10 +804,13 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     }
     
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
+
+    vis_mutex.lock();
     if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
         m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
 
     m_visualizer->spinOnce();
+    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters paramsDepth, PsCameraParameters paramsRGB, Matrix3d R, Vector3d t)
@@ -918,10 +924,12 @@ void PicoZenseHandler::PointCloudMapRGBDepthCustom(int p_height, int p_width, cv
         pointCloudRGB = cloud_filtered;
     }
 
+    vis_mutex.lock();
     if (!m_visualizer->updatePointCloud(pointCloudRGB, "PointCloud"))
         m_visualizer->addPointCloud(pointCloudRGB, "PointCloud");
 
     m_visualizer->spinOnce();
+    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
@@ -1060,7 +1068,12 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     else if (m_detectorISS)
         ISSCornerDetection();
 
+    vis_mutex.lock();
+    if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
+        m_visualizer->addPointCloud(pointCloud, "PointCloud");
+
     m_visualizer->spinOnce();
+    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::Harris3DCornerDetection()

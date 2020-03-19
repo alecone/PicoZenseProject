@@ -406,11 +406,8 @@ int main(int argc, char** argv) {
     }
     else if (devs > 1)
     {
-        PicoZenseHandler *pico2 = new PicoZenseHandler(1, viewer);
         PicoZenseHandler *pico1 = new PicoZenseHandler(0, viewer);
-        pico2->init();
         pico1->init();
-
         stop = false;
         //Create and lunch pthread
         pthread_t picoThread1;
@@ -419,6 +416,8 @@ int main(int argc, char** argv) {
         if (err)
             error("Thread creation failed: ", strerror(err));
 
+        PicoZenseHandler *pico2 = new PicoZenseHandler(1, viewer);
+        pico2->init();
         //Create and lunch pthread
         pthread_t picoThread2;
         // TODO! if needed set scheduling parameters and whatever else may be needed.
