@@ -1,5 +1,5 @@
-#ifndef PICOZENSEHANDLER_PICOZENSEHANDLER_H
-#define PICOZENSEHANDLER_PICOZENSEHANDLER_H
+#ifndef PICOZENSEHANDLER_H
+#define PICOZENSEHANDLER_H
 
 #include <opencv2/opencv.hpp>
 #include <pcl-1.8/pcl/visualization/cloud_viewer.h>
@@ -48,6 +48,8 @@
 #define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
 #define PCD_FILE_PATH   "/home/alecone/Documents/Università/Magistrale/Tesi/PCDs/"
 
+static boost::mutex vis_mutex;
+
 template <class... Args>
 void debug(Args... args)
 {
@@ -85,6 +87,10 @@ public:
     void InitializeInterations(pcl::visualization::PCLVisualizer::Ptr viewer);
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
 
+    // PointCloud Getters
+    PointCloud<PointXYZRGB>::Ptr GetRGBPointCloud();
+    PointCloud<PointXYZ>::Ptr GetPointCloud();
+
     // Getters PicoZense Params
     void GetCameraParameters();
     void GetImu();
@@ -117,6 +123,7 @@ public:
     void SetPointCloudClassic();
     void SetFeatureDetection(bool enable);
     void SetWDRDataMode();
+    bool IsPointCloudRGBEnabled();
 
 private:
     //Private functions
@@ -172,4 +179,4 @@ private:
     uint32_t m_saveIndex;
 };
 
-#endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H
+#endif // PICOZENSEHANDLER_H

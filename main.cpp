@@ -1,13 +1,8 @@
 #include <iostream>
 #include "PicoZenseHandler.h"
+#include "MultiCamWorker.h"
 
 typedef void *(*THREADFUNCPTR)(void *);
-
-struct picoHandlers
-{
-    PicoZenseHandler *pico1;
-    PicoZenseHandler *pico2;
-};
 
 static bool stop;
 
@@ -401,6 +396,7 @@ int main(int argc, char** argv) {
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
     debug("[main] Viewer ptr ", viewer);
+    boost::barrier myBarrier(devs+1);
     if (devs < 1)
     {
         error("There are no devices connected, connect it");
@@ -408,74 +404,45 @@ int main(int argc, char** argv) {
     }
     else if (devs > 1)
     {
-        boost::barrier myBarrier(devs);
-        PicoZenseHandler *pico1 = new PicoZenseHandler(0, viewer);
-        pico1->init();
         stop = false;
-        //Create and lunch pthread
-        // pthread_t picoThread1;
-        // // TODO! if needed set scheduling parameters and whatever else may be needed.
-        // int err = pthread_create(&picoThread1, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico1);
-        boost::thread picoThread1(boost::bind(&PicoZenseHandler::Visualize, pico1, boost::ref(myBarrier)));
-        // if (err)
-        //     error("Thread creation failed: ", strerror(err));
-
+        PicoZenseHandler *pico1 = new PicoZenseHandler(0, viewer);
         PicoZenseHandler *pico2 = new PicoZenseHandler(1, viewer);
+        pico1->init();
         pico2->init();
-        //Create and lunch pthread
-        // pthread_t picoThread2;
-        // // TODO! if needed set scheduling parameters and whatever else may be needed.
-        // err = pthread_create(&picoThread2, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico2);
-        // if (err)
-        //     error("Thread creation failed: ", strerror(err));
-        boost::thread picoThread2(boost::bind(&PicoZenseHandler::Visualize, pico2, boost::ref(myBarrier)));
-
-        pthread_t menuThread;
         struct picoHandlers picos;
         picos.pico1 = pico1;
         picos.pico2 = pico2;
-        int err = pthread_create(&menuThread, NULL, userAction, (void *)&picos);
-        if (err)
-            error("Thread creation failed: ", strerror(err));
+        MultiCamWorker *cams = new MultiCamWorker((void *)&picos, viewer);
+        boost::thread picoThread1(boost::bind(&PicoZenseHandler::Visualize, pico1, boost::ref(myBarrier)));
+        boost::thread picoThread2(boost::bind(&PicoZenseHandler::Visualize, pico2, boost::ref(myBarrier)));
+        boost::thread camsThread(boost::bind(&MultiCamWorker::worker, cams, boost::ref(myBarrier)));
 
-        // err = pthread_join(picoThread1, NULL);
-        // err = pthread_join(picoThread2, NULL);
-        // if (err)
-        //     return err;
-        // else
-        //     stop = true;
+        boost::thread menuThread(boost::bind(userAction, (void *)&picos));
+
         picoThread1.join();
         picoThread2.join();
+        camsThread.join();
         stop = true;
-        err = pthread_join(menuThread, NULL);
+        menuThread.join();
         delete pico1;
+        delete pico2;
     }
     else
     {
         PicoZenseHandler *pico = new PicoZenseHandler(0, viewer);
         pico->init();
         stop = false;
-        //Create and lunch pthread
-        pthread_t picoThread;
-        // TODO! if needed set scheduling parameters and whatever else may be needed.
-        int err = pthread_create(&picoThread, NULL, (THREADFUNCPTR)&PicoZenseHandler::Visualize, pico);
-        if (err)
-            error("Thread creation failed: ", strerror(err));
-        
-        pthread_t menuThread;
+        //Create and lunch threads
+        boost::thread picoThread(boost::bind(&PicoZenseHandler::Visualize, pico, boost::ref(myBarrier)));
+
         struct picoHandlers picos;
         picos.pico1 = pico;
         picos.pico2 = nullptr;
-        err = pthread_create(&menuThread, NULL, userAction, (void *)&picos);
-        if (err)
-            error("Thread creation failed: ", strerror(err));
+        boost::thread menuThread(boost::bind(userAction, (void *)&picos));
 
-        err = pthread_join(picoThread, NULL);
-        if (err)
-            return err;
-        else
-            stop = true;
-        err = pthread_join(menuThread, NULL);
+        picoThread.join();
+        stop = true;
+        menuThread.join();
         delete pico;
     }
     return 0;

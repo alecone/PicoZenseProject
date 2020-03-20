@@ -14,7 +14,6 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
 static bool m_loop;
 static bool m_pause;
 static PointXYZ old;
-static boost::mutex vis_mutex;
 
 static int KERNEL_LENGTH = 15;  // This might be tuned
 static int KERNEL_LENGTH_BILATREL = 15; //See function explanation
@@ -285,6 +284,22 @@ void PicoZenseHandler::GetCameraParameters()
          std::to_string(CameraExtrinsicParameters.translation[0]), " ", std::to_string(CameraExtrinsicParameters.translation[1]), " ", std::to_string(CameraExtrinsicParameters.translation[2]));
 }
 
+PointCloud<PointXYZRGB>::Ptr PicoZenseHandler::GetRGBPointCloud()
+{
+    if (pointCloudRGB != nullptr)
+    {
+        return pointCloudRGB;
+    }
+}
+
+PointCloud<PointXYZ>::Ptr PicoZenseHandler::GetPointCloud()
+{
+    if (pointCloudRGB != nullptr)
+    {
+        return pointCloud;
+    }
+}
+
 void PicoZenseHandler::SavePCD()
 {
     m_save = true;
@@ -530,6 +545,11 @@ void PicoZenseHandler::SetWDRDataMode()
         m_pointCloudClassic = false;
         m_wdrDepth = true;
     }
+}
+
+bool PicoZenseHandler::IsPointCloudRGBEnabled()
+{
+    return m_pointCloudMappedRGB;
 }
 
 void PicoZenseHandler::SetBilateralNoiseFilter(bool enable)
@@ -1287,20 +1307,7 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZ>::Ptr cloud_in, int3
 {
     if (m_deviceCount == 2)
     {
-        bool ret = p_barier.wait();
-        vis_mutex.lock();
-        if (dev_index == 0)
-        {
-            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudSX"))
-                m_visualizer->addPointCloud(cloud_in, "PointCloudSX");
-        }
-        else
-        {
-            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudDX"))
-                m_visualizer->addPointCloud(cloud_in, "PointCloudDX");
-        }
-        m_visualizer->spinOnce();
-        vis_mutex.unlock();
+        p_barier.wait();
     }
     else
     {
@@ -1314,20 +1321,7 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, i
 {
     if (m_deviceCount == 2)
     {
-        bool ret = p_barier.wait();
-        vis_mutex.lock();
-        if (dev_index == 0)
-        {
-            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudSX"))
-                m_visualizer->addPointCloud(cloud_in, "PointCloudSX");
-        }
-        else
-        {
-            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudDX"))
-                m_visualizer->addPointCloud(cloud_in, "PointCloudDX");
-        }
-        m_visualizer->spinOnce();
-        vis_mutex.unlock();
+        p_barier.wait();
     }
     else
     {

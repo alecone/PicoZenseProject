@@ -12,6 +12,7 @@ add_executable(PicoZenseProject
     main.cpp
     PicoZenseHandler.h
     PicoZenseHandler.cpp
+    MultiCamWorker.h
     MultiCamWorker.cpp
 )
 include_directories(
