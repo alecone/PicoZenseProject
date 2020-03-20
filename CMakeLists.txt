@@ -12,6 +12,7 @@ add_executable(PicoZenseProject
     main.cpp
     PicoZenseHandler.h
     PicoZenseHandler.cpp
+    MultiCamWorker.cpp
 )
 include_directories(
     /usr/include/pcl-1.8
@@ -56,7 +57,7 @@ target_link_libraries(PicoZenseProject
     # vtkRenderingLOD-6.3
     # vtkFiltersSources-6.3
     pthread
-    X11
+    boost_thread
 )
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

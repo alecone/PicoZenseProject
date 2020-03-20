@@ -54,6 +54,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     m_stattisticalOutlierRemoval = false;
     m_radialOutlierRemoval = false;
     m_mlsUpsampling = false;
+    m_saveIndex = 0;
     m_loop = true;
     m_pause = false;
 
@@ -66,8 +67,6 @@ PicoZenseHandler::~PicoZenseHandler()
     if (m_visualizer != nullptr)
     {
         m_visualizer->removeAllPointClouds();
-        // m_visualizer->close();
-        // m_visualizer = nullptr;
     }
     if (pointCloud != nullptr)
     {
@@ -91,9 +90,10 @@ PicoZenseHandler::~PicoZenseHandler()
 void PicoZenseHandler::init()
 {
     PsReturnStatus status;
-    int32_t deviceCount = 0;
+    m_deviceCount = 0;
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
+    PsGetDeviceCount(&m_deviceCount);
 
     status = PsInitialize();
     if (status != PsReturnStatus::PsRetOK)
@@ -131,10 +131,10 @@ void PicoZenseHandler::init()
     }
 }
 
-void *PicoZenseHandler::Visualize()
+void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
 {
     // Printing threadID
-    debug("Running threadID: ", pthread_self());
+    debug("Running threadID: ", boost::this_thread::get_id());
     PsReturnStatus status;
 
     PsCameraParameters depthCameraParameters;
@@ -193,7 +193,7 @@ void *PicoZenseHandler::Visualize()
             if (!m_pointCloudMappedRGB && depthFrame.pFrameData != NULL)
             {
                 //Generate and display PointCloud
-                PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters);
+                PointCloudCreatorXYZ(depthFrame.height, depthFrame.width, imageMatrix, depthFrame.pFrameData, depthCameraParameters, p_barier);
             }
         }
 
@@ -205,7 +205,7 @@ void *PicoZenseHandler::Visualize()
             if (!m_pointCloudMappedRGB && wdrDepthFrame.pFrameData != NULL)
             {
                 //Display the WDR Depth Image
-                PointCloudCreatorXYZ(wdrDepthFrame.height, wdrDepthFrame.width, imageMatrix, wdrDepthFrame.pFrameData, depthCameraParameters);
+                PointCloudCreatorXYZ(wdrDepthFrame.height, wdrDepthFrame.width, imageMatrix, wdrDepthFrame.pFrameData, depthCameraParameters, p_barier);
             }
         }
 
@@ -218,9 +218,9 @@ void *PicoZenseHandler::Visualize()
             if (mappedRGBFrame.pFrameData != NULL)
             {
                 if (m_dataMode == PsWDR_Depth)
-                    PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters);
+                    PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, wdrDepthFrame.pFrameData, depthCameraParameters, p_barier);
                 else
-                    PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters);
+                    PointCloudCreatorXYZRGB(mappedRGBFrame.height, mappedRGBFrame.width, imageMatrixRGB, imageMatrix, mappedRGBFrame.pFrameData, depthFrame.pFrameData, depthCameraParameters, p_barier);
             }
         }
         imageMatrix.release();
@@ -445,7 +445,15 @@ void PicoZenseHandler::SetPointCloudClassic()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
+        vis_mutex.lock();
+        if (m_deviceCount == 1)
+            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
+        else
+        {
+            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudSX");
+            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudDX");
+        }
+        vis_mutex.unlock();
         m_pointCloudMappedRGB = false;
         m_pointCloudClassic = true;
     }
@@ -471,7 +479,15 @@ void PicoZenseHandler::SetPointCloudRGB()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
+        vis_mutex.lock();
+        if (m_deviceCount == 1)
+            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
+        else
+        {
+            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
+            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
+        }
+        vis_mutex.unlock();
         m_pointCloudClassic = false;
         m_pointCloudMappedRGB = true;
     }
@@ -637,7 +653,7 @@ void PicoZenseHandler::InitializeInterations(pcl::visualization::PCLVisualizer::
     viewer->registerPointPickingCallback(pointEventHandler, (void *)this);
 }
 
-void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params)
+void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params, boost::barrier &p_barier)
 {
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
     p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
@@ -698,8 +714,7 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     {
         for (int u = 0; u < p_imageDepth.cols; u += 1)
         {
-            if (p_imageDepth.at<float>(v, u) == 0)
-                continue;
+            if (p_imageDepth.at<float>(v, u) == 0) continue;
             PointXYZRGB p;
             Vec3b intensity = p_imageRGB.at<Vec3b>(v, u);
             p.r = intensity.val[0];
@@ -727,13 +742,11 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
 
     if (m_save)
     {
-        time_t now = time(0);
-        char *dt = ctime(&now);
         std::string filename(PCD_FILE_PATH);
         filename.append("CAMERA_");
         filename.append(std::to_string(m_deviceIndex));
         filename.append("_");
-        filename.append(dt);
+        filename.append(std::to_string(m_saveIndex++));
         filename.append(".pcd");
         pcl::PCDWriter w;
         w.write(filename, *pointCloudRGB);
@@ -784,12 +797,14 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     }
     else if (m_fastTriangolation)
     {
+        // EDIT HERE in order to work with both camera too
         m_visualizer->removePointCloud("PointCloud");
         FastTriangolationRGB(pointCloudRGB);
         return;
     }
     else if (m_polynomialReconstraction)
     {
+        // EDIT HERE in order to work with both camera too
         m_visualizer->removePointCloud("PointCloud");
         PolynomialReconstructionRGB(pointCloudRGB);
         return;
@@ -797,15 +812,11 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
 
-    vis_mutex.lock();
-    if (!m_visualizer->updatePointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud"))
-        m_visualizer->addPointCloud<pcl::PointXYZRGB>(pointCloudRGB, rgb, "PointCloud");
-
-    m_visualizer->spinOnce();
-    vis_mutex.unlock();
+    // TODO move this to function for synchronization
+    SendToVisualizer(pointCloudRGB, m_deviceIndex, p_barier);
 }
 
-void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params)
+void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params, boost::barrier &p_barier)
 {
     p_image = cv::Mat(p_height, p_width, CV_16UC1, p_data);
     p_image.convertTo(p_image, CV_32F); // convert image data to float type
@@ -888,13 +899,11 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
 
     if (m_save)
     {
-        time_t now = time(0);
-        char *dt = ctime(&now);
         std::string filename(PCD_FILE_PATH);
         filename.append("CAMERA_");
         filename.append(std::to_string(m_deviceIndex));
         filename.append("_");
-        filename.append(dt);
+        filename.append(std::to_string(m_saveIndex++));
         filename.append(".pcd");
         pcl::PCDWriter w;
         w.write(filename, *pointCloud);
@@ -940,12 +949,7 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     else if (m_detectorISS)
         ISSCornerDetection();
 
-    vis_mutex.lock();
-    if (!m_visualizer->updatePointCloud(pointCloud, "PointCloud"))
-        m_visualizer->addPointCloud(pointCloud, "PointCloud");
-
-    m_visualizer->spinOnce();
-    vis_mutex.unlock();
+    SendToVisualizer(pointCloud, m_deviceIndex, p_barier);
 }
 
 void PicoZenseHandler::Harris3DCornerDetection()
@@ -1026,6 +1030,7 @@ void PicoZenseHandler::NARFCorenerDetection()
     veilPoints.sensor_orientation_ = q;
     shadowPoints.sensor_orientation_ = q;
 
+    vis_mutex.lock();
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> borderPointsColorHandler(borderPointsPtr, 0, 255, 0);
     if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(borderPointsPtr, borderPointsColorHandler, "border points"))
         m_visualizer->addPointCloud<pcl::PointWithRange>(borderPointsPtr, borderPointsColorHandler, "border points");
@@ -1038,6 +1043,7 @@ void PicoZenseHandler::NARFCorenerDetection()
     if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(shadowPointsPtr, shadowPointsColorHandler, "shadow points"))
         m_visualizer->addPointCloud<pcl::PointWithRange>(shadowPointsPtr, shadowPointsColorHandler, "shadow points");
     m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "shadow points");
+    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::ISSCornerDetection()
@@ -1276,6 +1282,61 @@ void PicoZenseHandler::FastTriangolationRGB(PointCloud<PointXYZRGB>::Ptr cloud_i
 
     //Find a way to visualize it
 }
+
+void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZ>::Ptr cloud_in, int32_t dev_index, boost::barrier &p_barier)
+{
+    if (m_deviceCount == 2)
+    {
+        bool ret = p_barier.wait();
+        vis_mutex.lock();
+        if (dev_index == 0)
+        {
+            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudSX"))
+                m_visualizer->addPointCloud(cloud_in, "PointCloudSX");
+        }
+        else
+        {
+            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudDX"))
+                m_visualizer->addPointCloud(cloud_in, "PointCloudDX");
+        }
+        m_visualizer->spinOnce();
+        vis_mutex.unlock();
+    }
+    else
+    {
+        if (!m_visualizer->updatePointCloud(cloud_in, "PointCloud"))
+            m_visualizer->addPointCloud(cloud_in, "PointCloud");
+        m_visualizer->spinOnce();
+    }
+}
+
+void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, int32_t dev_index, boost::barrier &p_barier)
+{
+    if (m_deviceCount == 2)
+    {
+        bool ret = p_barier.wait();
+        vis_mutex.lock();
+        if (dev_index == 0)
+        {
+            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudSX"))
+                m_visualizer->addPointCloud(cloud_in, "PointCloudSX");
+        }
+        else
+        {
+            if (!m_visualizer->updatePointCloud(cloud_in, "PointCloudDX"))
+                m_visualizer->addPointCloud(cloud_in, "PointCloudDX");
+        }
+        m_visualizer->spinOnce();
+        vis_mutex.unlock();
+    }
+    else
+    {
+        if (!m_visualizer->updatePointCloud(cloud_in, "PointCloud"))
+            m_visualizer->addPointCloud(cloud_in, "PointCloud");
+        m_visualizer->spinOnce();
+    }
+}
+
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void *pico)
 {
     // std::cout << "Mouse: button" << std::to_string(event.getButton()) << " type -> " << event.getType() << std::endl;

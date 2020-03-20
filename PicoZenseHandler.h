@@ -79,7 +79,7 @@ public:
     explicit PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer);
     ~PicoZenseHandler();
 
-    void *Visualize();
+    void *Visualize(boost::barrier &p_barier);
     void init();
     void SavePCD();
     void InitializeInterations(pcl::visualization::PCLVisualizer::Ptr viewer);
@@ -121,8 +121,8 @@ public:
 private:
     //Private functions
     std::string PsStatusToString(PsReturnStatus p_status);
-    void PointCloudCreatorXYZ(int p_height, int p_width, cv::Mat &p_image, uint8_t *p_data, PsCameraParameters params);
-    void PointCloudCreatorXYZRGB(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params);
+    void PointCloudCreatorXYZ(int p_height, int p_width, cv::Mat &p_image, uint8_t *p_data, PsCameraParameters params, boost::barrier &p_barier);
+    void PointCloudCreatorXYZRGB(int p_height, int p_width, cv::Mat &p_imageRGB, cv::Mat &p_imageDepth, uint8_t *p_dataRGB, uint8_t *p_dataDepth, PsCameraParameters params, boost::barrier &p_barier);
     void Harris3DCornerDetection();
     void NARFCorenerDetection();
     void ISSCornerDetection();
@@ -134,6 +134,10 @@ private:
 
     void PolynomialReconstructionRGB(PointCloud<PointXYZRGB>::Ptr cloud_in);
     void FastTriangolationRGB(PointCloud<PointXYZRGB>::Ptr cloud_in);
+
+    void SendToVisualizer(PointCloud<PointXYZ>::Ptr cloud_in, int32_t dev_index, boost::barrier &p_barier);
+    void SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, int32_t dev_index, boost::barrier &p_barier);
+
 
     //Provate members
     // pcl::visualization::CloudViewer *m_viewer = nullptr;
@@ -164,6 +168,8 @@ private:
     bool m_mlsUpsampling;
     bool m_fastTriangolation;
     bool m_polynomialReconstraction;
+    int32_t m_deviceCount;
+    uint32_t m_saveIndex;
 };
 
 #endif // PICOZENSEHANDLER_PICOZENSEHANDLER_H
