@@ -163,6 +163,7 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
     {
         if (m_pause)
         {
+            warn("Visualizer paused.");
             while (m_pause)
             {
                 vis_mutex.lock();
@@ -179,7 +180,7 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
         status = PsReadNextFrame(m_deviceIndex);
         if (status != PsRetOK)
         {
-            warn("PsReadNextFrame gave ", PsStatusToString(status));
+            warn("PsReadNextFrame gave ", PsStatusToString(status), " for device #", std::to_string(m_deviceIndex));
             usleep(50000);
             continue;
         }
