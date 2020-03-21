@@ -13,6 +13,10 @@ MultiCamWorker::MultiCamWorker(void *picoZenseHandlers, pcl::visualization::PCLV
     m_visualizer = viewer;
 }
 
+//Hint: sometimes it could clash during visualization.
+//in order to make it run again. compile it and run it without the
+//spinOnce() line code. Then restore, and it'll work.
+
 void MultiCamWorker::worker(boost::barrier &p_barier)
 {
     while (true)
