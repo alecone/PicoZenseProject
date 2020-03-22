@@ -177,6 +177,8 @@ private:
     bool m_polynomialReconstraction;
     int32_t m_deviceCount;
     uint32_t m_saveIndex;
+    PointCloud<PointXYZ>::Ptr copy = nullptr;
+    PointCloud<PointXYZRGB>::Ptr copyRGB = nullptr;
 };
 
 #endif // PICOZENSEHANDLER_H

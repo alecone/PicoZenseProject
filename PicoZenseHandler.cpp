@@ -22,12 +22,17 @@ static double SIGMA_Y = 1.0;
 static double SIGMA_COLOR = 50;
 static double SIGMA_SPACE = 75;
 
+boost::mutex pointCloudMutex;
+boost::mutex pointCloudRGBMutex;
+
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
     InitializeInterations(viewer);
     m_visualizer = viewer;
     pointCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
+    copy = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     pointCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
+    copyRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
 
     auto angle = M_PI;
@@ -287,17 +292,17 @@ void PicoZenseHandler::GetCameraParameters()
 
 PointCloud<PointXYZRGB>::Ptr PicoZenseHandler::GetRGBPointCloud()
 {
-    if (pointCloudRGB != nullptr)
+    if (copyRGB != nullptr)
     {
-        return pointCloudRGB;
+        return copyRGB;
     }
 }
 
 PointCloud<PointXYZ>::Ptr PicoZenseHandler::GetPointCloud()
 {
-    if (pointCloudRGB != nullptr)
+    if (copy != nullptr)
     {
-        return pointCloud;
+        return copy;
     }
 }
 
@@ -466,8 +471,8 @@ void PicoZenseHandler::SetPointCloudClassic()
             m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
         else
         {
-            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudSX");
-            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudDX");
+            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudSX");
+            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudDX");
         }
         vis_mutex.unlock();
         m_pointCloudMappedRGB = false;
@@ -500,8 +505,8 @@ void PicoZenseHandler::SetPointCloudRGB()
             m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
         else
         {
-            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
-            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
+            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
+            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
         }
         vis_mutex.unlock();
         m_pointCloudClassic = false;
@@ -711,6 +716,8 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         p_imageRGB = postProc;
     }
 
+    pointCloudRGBMutex.lock();
+
     pointCloudRGB->clear();
     if (m_bilateralUpsampling)
     {
@@ -832,6 +839,7 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     }
     
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
+    pointCloudRGBMutex.unlock();
 
     // TODO move this to function for synchronization
     SendToVisualizer(pointCloudRGB, m_deviceIndex, p_barier);
@@ -869,6 +877,7 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         p_image = postProc;
     }
 
+    pointCloudMutex.lock();
     pointCloud->clear();
 
     //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
@@ -969,6 +978,8 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         NARFCorenerDetection();
     else if (m_detectorISS)
         ISSCornerDetection();
+
+    pointCloudMutex.unlock();
 
     SendToVisualizer(pointCloud, m_deviceIndex, p_barier);
 }
@@ -1308,6 +1319,9 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZ>::Ptr cloud_in, int3
 {
     if (m_deviceCount == 2)
     {
+        pointCloudMutex.lock();
+        copyPointCloud(*pointCloud, *copy);
+        pointCloudMutex.unlock();
         p_barier.wait();
     }
     else
@@ -1322,6 +1336,9 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, i
 {
     if (m_deviceCount == 2)
     {
+        pointCloudRGBMutex.lock();
+        copyPointCloud(*pointCloudRGB, *copyRGB);
+        pointCloudRGBMutex.unlock();
         p_barier.wait();
     }
     else

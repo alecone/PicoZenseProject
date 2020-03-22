@@ -30,12 +30,22 @@ public:
 
 private:
     //Private functions
-    Eigen::Matrix4f allignPointClouds(PointCloud<PointXYZ>::Ptr cloudSrc1, PointCloud<PointXYZ>::Ptr cloudSrc2);
-    Eigen::Matrix4f allignPointCloudsRGB(PointCloud<PointXYZRGB>::Ptr cloudSrc1, PointCloud<PointXYZRGB>::Ptr cloudSrc2);
+    void allignPointClouds(PointCloud<PointXYZ>::Ptr cloudSrc1, PointCloud<PointXYZ>::Ptr cloudSrc2, Eigen::Matrix4f& T);
+    void allignPointCloudsRGB(PointCloud<PointXYZRGB>::Ptr cloudSrc1, PointCloud<PointXYZRGB>::Ptr cloudSrc2, Eigen::Matrix4f& T);
 
     //Private members
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
     struct picoHandlers *picos;
+    Eigen::Matrix4f T;
+    bool m_computeTransform;
+    PointCloud<PointXYZRGB>::Ptr finalCloudRGB;
+    PointCloud<PointXYZRGB>::Ptr cloudTransformedRGB;
+    PointCloud<PointXYZRGB>::Ptr srcRGB;
+    PointCloud<PointXYZRGB>::Ptr tgtRGB;
+    PointCloud<PointXYZ>::Ptr finalCloud;
+    PointCloud<PointXYZ>::Ptr cloudTransformed;
+    PointCloud<PointXYZ>::Ptr src;
+    PointCloud<PointXYZ>::Ptr tgt;
 };
 
 #endif // !MULTICAMWORKER_H
