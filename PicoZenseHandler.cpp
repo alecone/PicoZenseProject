@@ -773,7 +773,7 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         std::string filename(PCD_FILE_PATH);
         filename.append("CAMERA_");
         filename.append(std::to_string(m_deviceIndex));
-        filename.append("_");
+        filename.append("_RGBD_");
         filename.append(std::to_string(m_saveIndex++));
         filename.append(".pcd");
         pcl::PCDWriter w;
