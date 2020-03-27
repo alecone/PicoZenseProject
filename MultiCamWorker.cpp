@@ -1,8 +1,5 @@
 #include "MultiCamWorker.h"
 
-#define ALLIGN 0
-
-
 MultiCamWorker::MultiCamWorker(void *picoZenseHandlers, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
     info("MultiCam Object created");
@@ -14,14 +11,13 @@ MultiCamWorker::MultiCamWorker(void *picoZenseHandlers, pcl::visualization::PCLV
     }
     info("PicoZenseHandlers are OK!");
     m_visualizer = viewer;
-    m_computeTransform = true;
+    m_computeTransform = false;
+    m_loop = true;
     T = Eigen::Matrix4f::Identity();
     finalCloudRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
-    cloudTransformedRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     srcRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     tgtRGB = PointCloud<PointXYZRGB>::Ptr(new PointCloud<PointXYZRGB>());
     finalCloud = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
-    cloudTransformed = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     src = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
     tgt = PointCloud<PointXYZ>::Ptr(new PointCloud<PointXYZ>());
 }
@@ -34,7 +30,7 @@ void MultiCamWorker::worker(boost::barrier &p_barier)
 {
     // T << 0.998038, 0.016504, 0.0603983, -0.197575, -0.0152705, 0.999667, -0.0208275, 0.0166649, -0.0607219, 0.0198643, 0.997957, 0.0132814, -0, -0, -0, 1;
 
-    while (true)
+    while (m_loop)
     {
         p_barier.wait();
         if (picos->pico1->IsPointCloudRGBEnabled() != picos->pico2->IsPointCloudRGBEnabled())
@@ -44,16 +40,14 @@ void MultiCamWorker::worker(boost::barrier &p_barier)
             // Copy PointCloud
             copyPointCloud(*picos->pico1->GetRGBPointCloud(), *srcRGB);
             copyPointCloud(*picos->pico2->GetRGBPointCloud(), *tgtRGB);
-#if ALLIGN
             if (m_computeTransform)
             {
-                allignPointCloudsRGB(srcRGB, tgtRGB, T);
+                allignPointClouds(srcRGB, tgtRGB, T);
                 m_computeTransform = false;
             }
-#endif
-            transformPointCloud(*tgtRGB, *cloudTransformedRGB, T);
             *finalCloudRGB = *srcRGB;
-            *finalCloudRGB += *cloudTransformedRGB;
+            *finalCloudRGB += *tgtRGB;
+
             if (!m_visualizer->updatePointCloud(finalCloudRGB, "PointCloudAlligned"))
                 m_visualizer->addPointCloud(finalCloudRGB, "PointCloudAlligned");
 
@@ -64,22 +58,54 @@ void MultiCamWorker::worker(boost::barrier &p_barier)
             // Copy PointCloud
             copyPointCloud(*picos->pico1->GetPointCloud(), *src);
             copyPointCloud(*picos->pico2->GetPointCloud(), *tgt);
-#if ALLIGN
             if (m_computeTransform)
             {
                 allignPointClouds(src, tgt, T);
                 m_computeTransform = false;
             }
-#endif
-            transformPointCloud(*tgt, *cloudTransformed, T);
             *finalCloud = *src;
-            *finalCloud += *cloudTransformed;
+            *finalCloud += *tgt;
+
             if (!m_visualizer->updatePointCloud(finalCloud, "PointCloudAlligned"))
                 m_visualizer->addPointCloud(finalCloud, "PointCloudAlligned");
 
             m_visualizer->spinOnce();
         }
     }
+}
+
+bool MultiCamWorker::getTransform(Eigen::Matrix4f &p_tranform)
+{
+    bool computed = false;
+    if (!m_computeTransform)
+    {
+        if (! (T == Eigen::Matrix4f::Identity()))
+        {
+            p_tranform = T;
+            computed = true;
+        }
+    }
+    return computed;
+}
+
+void MultiCamWorker::startComputeTransform()
+{
+    m_computeTransform = true;
+}
+
+void MultiCamWorker::ShutDown()
+{
+    info("Shutting down Cameras Worker...");
+    m_loop = false;
+    m_visualizer = nullptr;
+    finalCloudRGB = nullptr;
+    srcRGB = nullptr;
+    tgtRGB = nullptr;
+    finalCloud = nullptr;
+    src = nullptr;
+    tgt = nullptr;
+
+    exit(0);
 }
 
 void MultiCamWorker::allignPointClouds(PointCloud<PointXYZ>::Ptr cloudSrc1, PointCloud<PointXYZ>::Ptr cloudSrc2, Eigen::Matrix4f &T)
@@ -147,7 +173,7 @@ void MultiCamWorker::allignPointClouds(PointCloud<PointXYZ>::Ptr cloudSrc1, Poin
     T = targetToSource;
 }
 
-void MultiCamWorker::allignPointCloudsRGB(PointCloud<PointXYZRGB>::Ptr cloudSrc1, PointCloud<PointXYZRGB>::Ptr cloudSrc2, Eigen::Matrix4f &T)
+void MultiCamWorker::allignPointClouds(PointCloud<PointXYZRGB>::Ptr cloudSrc1, PointCloud<PointXYZRGB>::Ptr cloudSrc2, Eigen::Matrix4f &T)
 {
     PointCloud<PointXYZRGB>::Ptr allignedRGB(new PointCloud<PointXYZRGB>());
 

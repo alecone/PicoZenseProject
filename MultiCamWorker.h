@@ -27,11 +27,14 @@ public:
 
     //Public functions
     void worker(boost::barrier &p_barier);
+    bool getTransform(Eigen::Matrix4f& p_tranform);
+    void startComputeTransform();
+    void ShutDown();
 
 private:
     //Private functions
     void allignPointClouds(PointCloud<PointXYZ>::Ptr cloudSrc1, PointCloud<PointXYZ>::Ptr cloudSrc2, Eigen::Matrix4f& T);
-    void allignPointCloudsRGB(PointCloud<PointXYZRGB>::Ptr cloudSrc1, PointCloud<PointXYZRGB>::Ptr cloudSrc2, Eigen::Matrix4f& T);
+    void allignPointClouds(PointCloud<PointXYZRGB>::Ptr cloudSrc1, PointCloud<PointXYZRGB>::Ptr cloudSrc2, Eigen::Matrix4f& T);
 
     //Private members
     pcl::visualization::PCLVisualizer::Ptr m_visualizer = nullptr;
@@ -39,13 +42,12 @@ private:
     Eigen::Matrix4f T;
     bool m_computeTransform;
     PointCloud<PointXYZRGB>::Ptr finalCloudRGB;
-    PointCloud<PointXYZRGB>::Ptr cloudTransformedRGB;
     PointCloud<PointXYZRGB>::Ptr srcRGB;
     PointCloud<PointXYZRGB>::Ptr tgtRGB;
     PointCloud<PointXYZ>::Ptr finalCloud;
-    PointCloud<PointXYZ>::Ptr cloudTransformed;
     PointCloud<PointXYZ>::Ptr src;
     PointCloud<PointXYZ>::Ptr tgt;
+    bool m_loop;
 };
 
 #endif // !MULTICAMWORKER_H

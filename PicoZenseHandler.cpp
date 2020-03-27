@@ -11,7 +11,6 @@ using namespace Eigen;
 static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event, void* pico);
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void* pico);
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico);
-static bool m_loop;
 static bool m_pause;
 static PointXYZ old;
 
@@ -21,9 +20,6 @@ static double SIGMA_X = 1.0;
 static double SIGMA_Y = 1.0;
 static double SIGMA_COLOR = 50;
 static double SIGMA_SPACE = 75;
-
-boost::mutex pointCloudMutex;
-boost::mutex pointCloudRGBMutex;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
@@ -36,9 +32,9 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     rangeImage = pcl::RangeImage::Ptr(new pcl::RangeImage());
 
     auto angle = M_PI;
-    q.x() = 0 * sin(angle / 2);
+    q.x() = 1 * sin(angle / 2);
     q.y() = 0 * sin(angle / 2);
-    q.z() = 1 * sin(angle / 2);
+    q.z() = 0 * sin(angle / 2);
     q.w() = 1 * std::cos(angle / 2);
     m_deviceIndex = devIndex;
     m_depthRange = PsNearRange;
@@ -59,19 +55,19 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     m_radialOutlierRemoval = false;
     m_mlsUpsampling = false;
     m_saveIndex = 0;
+    m_canUseTransform = false;
+    m_polynomialReconstraction = false;
+    m_fastTriangolation = false;
+    transform = Eigen::Matrix4f::Identity();
     m_loop = true;
     m_pause = false;
 
-    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsWDR_Depth\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
+    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
 }
 
 
 PicoZenseHandler::~PicoZenseHandler()
 {
-    if (m_visualizer != nullptr)
-    {
-        m_visualizer->removeAllPointClouds();
-    }
     if (pointCloud != nullptr)
     {
         pointCloud->clear();
@@ -120,7 +116,6 @@ void PicoZenseHandler::init()
     if (status != PsReturnStatus::PsRetOK)
     {
         error("OpenDevice failed with status ", PsStatusToString(status));
-        system("pause");
         return;
     }
 
@@ -133,6 +128,16 @@ void PicoZenseHandler::init()
     {
         warn("Set DataMode Failed failed!");
     }
+
+    //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
+    // It has be done a rotation around the z azis
+    // Quaternions are a really cool way to express 3D rotation and it doesn't have to use rotation matrix
+    // since orientation is expressed by 1 + i + j + k. Using eulero fornula quaternion orientation goes like
+    // q = exp[angle/2*(ax*i + ay*j + az*k)] = cos(angle/2) + (ax*i + ay*j + az*k)*sin(angle/2)
+    // What will acually happen internally is that every point of the Point cloud acquired by the sensor will be sandwich multipy by q
+    // in this following way --> p' = q * p * q-1
+    pointCloudRGB->sensor_orientation_ = q;
+    pointCloud->sensor_orientation_ = q;
 }
 
 void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
@@ -236,13 +241,7 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
     }
 
     status = PsCloseDevice(m_deviceIndex);
-    info("CloseDevice status: ", PsStatusToString(status));
-
-    status = PsShutdown();
-    info("Shutdown status: ", PsStatusToString(status));
-
-    // Return in order to make thread exit
-    return NULL;
+    info("Close Device #", m_deviceIndex, " returned status: ", PsStatusToString(status));
 }
 
 void PicoZenseHandler::GetCameraParameters()
@@ -500,7 +499,6 @@ void PicoZenseHandler::SetPointCloudRGB()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        vis_mutex.lock();
         if (m_deviceCount == 1)
             m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
         else
@@ -508,10 +506,10 @@ void PicoZenseHandler::SetPointCloudRGB()
             // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
             // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
         }
-        vis_mutex.unlock();
         m_pointCloudClassic = false;
         m_pointCloudMappedRGB = true;
     }
+    debug("Done PointCloud RGB/Depth mapped for device #", m_deviceIndex);
 }
 
 void PicoZenseHandler::SetWDRDataMode()
@@ -608,6 +606,26 @@ void PicoZenseHandler::SetPolynomialReconstruction(bool enable)
 {
     m_polynomialReconstraction = enable;
 }
+
+void PicoZenseHandler::SetTransform(Eigen::Matrix4f p_transform)
+{
+    transform = p_transform;
+    debug("Tranform to be applied to camera #", m_deviceIndex, " is \n", transform);
+    m_canUseTransform = true;
+}
+
+void PicoZenseHandler::UnSetTranform()
+{
+    debug("Tranform won't be applied anymore");
+    m_canUseTransform = false;
+}
+
+void PicoZenseHandler::ShutDown()
+{
+    info("Shutting down device #", m_deviceIndex);
+    m_loop = false;
+}
+
 /*  Private Functions  */
 
 std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
@@ -684,7 +702,7 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
     p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
     
-    p_imageDepth.convertTo(p_imageDepth, CV_32F); // convert depth image data to float type
+    p_imageDepth.convertTo(p_imageDepth, CV_32F, 0.001); // convert depth image data to float type and to meters già che ci siamo
     if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
     {
         error("Images with different sizes!!!");
@@ -716,8 +734,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         p_imageRGB = postProc;
     }
 
-    pointCloudRGBMutex.lock();
-
     pointCloudRGB->clear();
     if (m_bilateralUpsampling)
     {
@@ -728,16 +744,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         pointCloudRGB->resize(p_width * p_height);
     }
     
-
-    //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
-    // It has be done a rotation around the z azis
-    // Quaternions are a really cool way to express 3D rotation and it doesn't have to use rotation matrix
-    // since orientation is expressed by 1 + i + j + k. Using eulero fornula quaternion orientation goes like
-    // q = exp[angle/2*(ax*i + ay*j + az*k)] = cos(angle/2) + (ax*i + ay*j + az*k)*sin(angle/2)
-    // What will acually happen internally is that every point of the Point cloud acquired by the sensor will be sandwich multipy by q
-    // in this following way --> p' = q * p * q-1
-    pointCloudRGB->sensor_orientation_ = q;
-
     for (int v = 0; v < p_imageDepth.rows; v += 1)
     {
         for (int u = 0; u < p_imageDepth.cols; u += 1)
@@ -752,11 +758,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
             p.x = (u - (float)params.cx) * p.z / (float)params.fx;
             p.y = (v - (float)params.cy) * p.z / (float)params.fy;
 
-            // Converting to meters
-            p.z = p.z / 1000;
-            p.x = p.x / 1000;
-            p.y = p.y / 1000;
-
             if (m_bilateralUpsampling)
             {
                 pointCloudRGB->at(u, v) = p;
@@ -767,6 +768,9 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
             }
         }
     }
+
+    if (m_canUseTransform)
+        transformPointCloud(*pointCloudRGB, *pointCloudRGB, transform);
 
     if (m_save)
     {
@@ -838,17 +842,13 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         return;
     }
     
-    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> rgb(pointCloudRGB);
-    pointCloudRGBMutex.unlock();
-
-    // TODO move this to function for synchronization
     SendToVisualizer(pointCloudRGB, m_deviceIndex, p_barier);
 }
 
 void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params, boost::barrier &p_barier)
 {
     p_image = cv::Mat(p_height, p_width, CV_16UC1, p_data);
-    p_image.convertTo(p_image, CV_32F); // convert image data to float type
+    p_image.convertTo(p_image, CV_32F, 0.001); // convert image data to float type and to meters già che ci siamo
     if (!imageMatrix.data)
         error("No depth data");
 
@@ -877,12 +877,7 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         p_image = postProc;
     }
 
-    pointCloudMutex.lock();
     pointCloud->clear();
-
-    //From formula: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
-    // It has be done a rotation around the z azis
-    pointCloud->sensor_orientation_ = q;
 
     //Getting the world's points coordinate from the image relying on
     //Perspective projection using homogeneous coordinates.
@@ -902,14 +897,12 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
             p.x = (u - (float)params.cx) * p.z / (float)params.fx;
             p.y = (v - (float)params.cy) * p.z / (float)params.fy;
 
-            // Converting to meters
-            p.z = p.z / 1000;
-            p.x = p.x / 1000;
-            p.y = p.y / 1000;
-
             pointCloud->push_back(p);
         }
     }
+
+    if (m_canUseTransform)
+        transformPointCloud(*pointCloud, *pointCloud, transform);
 
     if(m_fastBiFilter)
     {
@@ -979,7 +972,6 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     else if (m_detectorISS)
         ISSCornerDetection();
 
-    pointCloudMutex.unlock();
 
     SendToVisualizer(pointCloud, m_deviceIndex, p_barier);
 }
@@ -1319,9 +1311,7 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZ>::Ptr cloud_in, int3
 {
     if (m_deviceCount == 2)
     {
-        pointCloudMutex.lock();
         copyPointCloud(*pointCloud, *copy);
-        pointCloudMutex.unlock();
         p_barier.wait();
     }
     else
@@ -1336,9 +1326,7 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, i
 {
     if (m_deviceCount == 2)
     {
-        pointCloudRGBMutex.lock();
         copyPointCloud(*pointCloudRGB, *copyRGB);
-        pointCloudRGBMutex.unlock();
         p_barier.wait();
     }
     else
@@ -1360,13 +1348,6 @@ static void keyboardEventHandler(const pcl::visualization::KeyboardEvent &event,
     if (event.getKeySym() == "p" && event.keyUp())
     {
         m_pause = !m_pause;
-    }
-    else if (event.getKeySym() == "Escape" && event.keyUp())
-    {
-        info("Shutting down ...");
-        // add mutex here
-        m_loop = false;
-        // Free what allocated
     }
 }
 static void pointEventHandler(const pcl::visualization::PointPickingEvent &event, void *pico)

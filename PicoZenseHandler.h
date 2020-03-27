@@ -117,6 +117,8 @@ public:
     void SetMLSUpsampling(bool enable);
     void SetFastTriangolation(bool enable);
     void SetPolynomialReconstruction(bool enable);
+    void SetTransform(Eigen::Matrix4f p_tranform);
+    void UnSetTranform();
 
     // Main PointCloud Feautures funtions
     void SetPointCloudRGB();
@@ -124,6 +126,7 @@ public:
     void SetFeatureDetection(bool enable);
     void SetWDRDataMode();
     bool IsPointCloudRGBEnabled();
+    void ShutDown();
 
 private:
     //Private functions
@@ -179,6 +182,9 @@ private:
     uint32_t m_saveIndex;
     PointCloud<PointXYZ>::Ptr copy = nullptr;
     PointCloud<PointXYZRGB>::Ptr copyRGB = nullptr;
+    Eigen::Matrix4f transform;
+    bool m_canUseTransform;
+    bool m_loop;
 };
 
 #endif // PICOZENSEHANDLER_H

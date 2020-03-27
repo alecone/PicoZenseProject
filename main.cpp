@@ -4,6 +4,13 @@
 
 typedef void *(*THREADFUNCPTR)(void *);
 
+struct instanceHandlers
+{
+    PicoZenseHandler *pico1;
+    PicoZenseHandler *pico2;
+    MultiCamWorker *cams;
+};
+
 static bool stop;
 
 void mainMenu()
@@ -12,7 +19,8 @@ void mainMenu()
     info("Menu. Choose an option");
     info("1. Tweak PicoZense camera parameters\n2. Get PicoZense camera parameters");
     info("3. Toggle RGB PointCloud\n4. Toggle 'Classic B&W' PointCloud\n5. Toggle WDR PointCloud");
-    info("6. Set NARF Features detections\n99. Save PointCloud as pcd file");
+    info("6. Set NARF Features detections\n7. Start ICP\n8. Set allign Point Clouds");
+    info("90. Save PointCloud as pcd file\n\n99. Shut Down");
     info("**************************************************\n");
 }
 void settersMenu()
@@ -30,7 +38,7 @@ void settersMenu()
 
 void *userAction(void *picoZenseHandlers)
 {
-    struct picoHandlers *picos = (struct picoHandlers *)picoZenseHandlers;
+    struct instanceHandlers *picos = (struct instanceHandlers *)picoZenseHandlers;
     if (picos->pico1 == NULL && picos->pico2 == NULL)
     {
         error("PicoZenseHandlers are null, Stop it!");
@@ -38,6 +46,7 @@ void *userAction(void *picoZenseHandlers)
     }
     debug("PicoZense 1: ", picos->pico1);
     debug("PicoZense 2: ", picos->pico2);
+    debug("MultiCamWorker: ", picos->cams);
 
     int choice;
     PsReturnStatus status;
@@ -332,7 +341,6 @@ void *userAction(void *picoZenseHandlers)
             }
             break;
         case 3:
-            debug("Setting PointCloud RGB/Depth mapped");
             picos->pico1->SetPointCloudRGB();
             if (picos->pico2 != NULL)
             {
@@ -370,10 +378,50 @@ void *userAction(void *picoZenseHandlers)
                 }
             }
             break;
-        case 99:
+        case 7:
+            if (picos->cams != nullptr)
+            {
+                picos->cams->startComputeTransform();
+            }
+            break;
+        case 8:
+            if (picos->cams != nullptr)
+            {
+                std::cin.clear();
+                std::cin.ignore(1024, '\n');
+                info("0. Disallign\n1. Allign");
+                std::cin >> choice;
+                if (choice == 1)
+                {
+                    //Try to get the transform
+                    Eigen::Matrix4f T;
+                    bool readyToTransform = picos->cams->getTransform(T);
+                    if (readyToTransform)
+                    {
+                        //Since the transform if from Cam#2 to Cam#1 set the transform properly
+                        picos->pico2->SetTransform(T);
+                    }
+                    else
+                        debug("Transform not conputed yet");
+                }
+                else if (choice == 0)
+                {
+                    picos->pico2->UnSetTranform();
+                }
+            }
+            else
+                warn("Nothing to do, MultiCamWorker does not exist!");
+            break;
+        case 90:
             picos->pico1->SavePCD();
             if (picos->pico2 != NULL)
                 picos->pico2->SavePCD();
+            break;
+        case 99:
+            if (picos->pico1 != nullptr)
+                picos->pico1->ShutDown();
+            if (picos->pico2 != nullptr)
+                picos->pico2->ShutDown();
             break;
 
         default:
@@ -409,10 +457,11 @@ int main(int argc, char** argv) {
         PicoZenseHandler *pico2 = new PicoZenseHandler(1, viewer);
         pico1->init();
         pico2->init();
-        struct picoHandlers picos;
+        struct instanceHandlers picos;
         picos.pico1 = pico1;
         picos.pico2 = pico2;
         MultiCamWorker *cams = new MultiCamWorker((void *)&picos, viewer);
+        picos.cams = cams;
         boost::thread picoThread1(boost::bind(&PicoZenseHandler::Visualize, pico1, boost::ref(myBarrier)));
         boost::thread picoThread2(boost::bind(&PicoZenseHandler::Visualize, pico2, boost::ref(myBarrier)));
         boost::thread camsThread(boost::bind(&MultiCamWorker::worker, cams, boost::ref(myBarrier)));
@@ -421,11 +470,12 @@ int main(int argc, char** argv) {
 
         picoThread1.join();
         picoThread2.join();
-        camsThread.join();
+        info("Shutdown status: ", PsShutdown());
         stop = true;
         menuThread.join();
         delete pico1;
         delete pico2;
+        cams->ShutDown();
     }
     else
     {
@@ -435,12 +485,14 @@ int main(int argc, char** argv) {
         //Create and lunch threads
         boost::thread picoThread(boost::bind(&PicoZenseHandler::Visualize, pico, boost::ref(myBarrier)));
 
-        struct picoHandlers picos;
+        struct instanceHandlers picos;
         picos.pico1 = pico;
         picos.pico2 = nullptr;
+        picos.cams = nullptr;
         boost::thread menuThread(boost::bind(userAction, (void *)&picos));
 
         picoThread.join();
+        info("Shutdown status: ", PsShutdown());
         stop = true;
         menuThread.join();
         delete pico;
