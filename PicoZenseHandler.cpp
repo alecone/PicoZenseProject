@@ -95,12 +95,12 @@ void PicoZenseHandler::init()
     // uint32_t wdrSlope = 4400;
     PsGetDeviceCount(&m_deviceCount);
 
-    status = PsInitialize();
-    if (status != PsReturnStatus::PsRetOK)
-    {
-        error("PsInitialize failed!");
-        exit(1);
-    }
+    // status = PsInitialize();
+    // if (status != PsReturnStatus::PsRetOK)
+    // {
+    //     error("PsInitialize failed!");
+    //     exit(1);
+    // }
 
     // uint32_t slope = 1450;
     // uint32_t wdrSlope = 4400;
@@ -246,6 +246,7 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
 
 void PicoZenseHandler::GetCameraParameters()
 {
+    warn("CAMERA #", m_deviceIndex);
     PsCameraParameters cameraParameters;
     PsReturnStatus status = PsGetCameraParameters(m_deviceIndex, PsDepthSensor, &cameraParameters);
     info("Get PsGetCameraParameters PsDepthSensor status: ", PsStatusToString(status));
@@ -253,15 +254,15 @@ void PicoZenseHandler::GetCameraParameters()
          "Cx: ", std::to_string(cameraParameters.cx), "\n",
          "Fy: ", std::to_string(cameraParameters.fy), "\n",
          "Cy: ", std::to_string(cameraParameters.cy));//, "\n",
-        //  "Depth Distortion Coefficient: \n",
-        //  "K1: ", std::to_string(cameraParameters.k1), "\n",
-        //  "K2: ", std::to_string(cameraParameters.k2), "\n",
-        //  "P1: ", std::to_string(cameraParameters.p1), "\n",
-        //  "P2: ", std::to_string(cameraParameters.p2), "\n",
-        //  "K3: ", std::to_string(cameraParameters.k3), "\n",
-        //  "K4: ", std::to_string(cameraParameters.k4), "\n",
-        //  "K5: ", std::to_string(cameraParameters.k5), "\n",
-        //  "K6: ", std::to_string(cameraParameters.k6));
+    info("Depth Distortion Coefficient: \n",
+         "K1: ", std::to_string(cameraParameters.k1), "\n",
+         "K2: ", std::to_string(cameraParameters.k2), "\n",
+         "P1: ", std::to_string(cameraParameters.p1), "\n",
+         "P2: ", std::to_string(cameraParameters.p2), "\n",
+         "K3: ", std::to_string(cameraParameters.k3), "\n",
+         "K4: ", std::to_string(cameraParameters.k4), "\n",
+         "K5: ", std::to_string(cameraParameters.k5), "\n",
+         "K6: ", std::to_string(cameraParameters.k6));
 
     status = PsGetCameraParameters(m_deviceIndex, PsRgbSensor, &cameraParameters);
     info("Get PsGetCameraParameters PsRgbSensor status: ", PsStatusToString(status));
@@ -270,12 +271,15 @@ void PicoZenseHandler::GetCameraParameters()
          "Cx: ", std::to_string(cameraParameters.cx), "\n",
          "Fy: ", std::to_string(cameraParameters.fy), "\n",
          "Cy: ", std::to_string(cameraParameters.cy));//, "\n",
-        //  "RGB Distortion Coefficient: \n",
-        //  "K1: ", std::to_string(cameraParameters.k1), "\n",
-        //  "K2: ", std::to_string(cameraParameters.k2), "\n",
-        //  "P1: ", std::to_string(cameraParameters.p1), "\n",
-        //  "P2: ", std::to_string(cameraParameters.p2), "\n",
-        //  "K3: ", std::to_string(cameraParameters.k3), "\n");
+    info("RGB Distortion Coefficient: \n",
+         "K1: ", std::to_string(cameraParameters.k1), "\n",
+         "K2: ", std::to_string(cameraParameters.k2), "\n",
+         "P1: ", std::to_string(cameraParameters.p1), "\n",
+         "P2: ", std::to_string(cameraParameters.p2), "\n",
+         "K3: ", std::to_string(cameraParameters.k3), "\n",
+         "K4: ", std::to_string(cameraParameters.k4), "\n",
+         "K5: ", std::to_string(cameraParameters.k5), "\n",
+         "K6: ", std::to_string(cameraParameters.k6));
 
     PsCameraExtrinsicParameters CameraExtrinsicParameters;
     status = PsGetCameraExtrinsicParameters(m_deviceIndex, &CameraExtrinsicParameters);
@@ -1054,7 +1058,6 @@ void PicoZenseHandler::NARFCorenerDetection()
     veilPoints.sensor_orientation_ = q;
     shadowPoints.sensor_orientation_ = q;
 
-    vis_mutex.lock();
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> borderPointsColorHandler(borderPointsPtr, 0, 255, 0);
     if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(borderPointsPtr, borderPointsColorHandler, "border points"))
         m_visualizer->addPointCloud<pcl::PointWithRange>(borderPointsPtr, borderPointsColorHandler, "border points");
@@ -1067,7 +1070,6 @@ void PicoZenseHandler::NARFCorenerDetection()
     if (!m_visualizer->updatePointCloud<pcl::PointWithRange>(shadowPointsPtr, shadowPointsColorHandler, "shadow points"))
         m_visualizer->addPointCloud<pcl::PointWithRange>(shadowPointsPtr, shadowPointsColorHandler, "shadow points");
     m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "shadow points");
-    vis_mutex.unlock();
 }
 
 void PicoZenseHandler::ISSCornerDetection()
@@ -1377,4 +1379,5 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
 
         old = novo;
     }
+    // picoHandler->m_viesualizer->markPoint
  }

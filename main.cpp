@@ -439,11 +439,23 @@ int main(int argc, char** argv) {
     int32_t devs;
 
     PsGetDeviceCount(&devs);
+    while (devs < 1)
+    {
+        warn("No devices attached...Please start attaching the RIGHT device.");
+        sleep(5);
+        PsGetDeviceCount(&devs);
+    }
+    PsReturnStatus status = PsInitialize();
+    if (status != PsReturnStatus::PsRetOK)
+    {
+        error("PsInitialize failed!");
+        exit(1);
+    }
+
     debug("Found ", std::to_string(devs), (devs > 1 ? " devices attached, going to run them" : " device attached, going to run it"));
 
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
     viewer->setBackgroundColor(0.0, 0.0, 0.0);
-    debug("[main] Viewer ptr ", viewer);
     boost::barrier myBarrier(devs+1);
     if (devs < 1)
     {
