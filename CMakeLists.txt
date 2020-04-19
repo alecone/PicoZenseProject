@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(PicoZenseProject VERSION 0.1.0)
+project(PicoZenseProject VERSION 1.0.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -7,37 +7,35 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 # enable_testing()
 
 set(CMAKE_CXX_STANDARD 17)
+find_package(OpenCV REQUIRED)
+find_library(picozense_api NAMES libpicozense_api.so PATHS external/lib/)
 
 add_executable(PicoZenseProject
-    main.cpp
-    PicoZenseHandler.h
-    PicoZenseHandler.cpp
-    MultiCamWorker.h
-    MultiCamWorker.cpp
+    inc/PicoZense_api.h
+    inc/PicoZense_define.h
+    inc/PicoZense_enums.h
+    inc/PicoZense_types.h
+    inc/PicoZenseHandler.h
+    inc/MultiCamWorker.h
+    src/PicoZenseHandler.cpp
+    src/MultiCamWorker.cpp
+    src/main.cpp
 )
 include_directories(
+    inc
+    ${OpenCV_INCLUDE_DIRS}
     /usr/include/pcl-1.8
     /usr/include/eigen3
     /usr/include/vtk-6.3
-    /opt/PicoZense/Thirdparty/opencv-3.4.1/include
-    /opt/PicoZense/Include
 )
-link_directories(
-    /usr/lib/x86_64-linux-gnu
-    /opt/PicoZense/Thirdparty/opencv-3.4.1/lib/x64
-    /opt/PicoZense/Lib/x64
-)
-# add_definitions(
-#     ${PCL_DEFINITIONS}
+# link_directories(
+#     /usr/lib/x86_64-linux-gnu
 # )
 
 target_link_libraries(PicoZenseProject
-    # ${PCL_LIBRARIES}
-    opencv_core
-    opencv_highgui
-    opencv_imgproc
-    opencv_imgcodecs
-    picozense_api
+    ${OpenCV_LIBRARIES}
+    ${picozense_api}
+    #Including only the necessary ones
     pcl_visualization
     boost_system
     pcl_common
