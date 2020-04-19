@@ -2,6 +2,7 @@
 #define PICOZENSEHANDLER_H
 
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <pcl-1.8/pcl/visualization/cloud_viewer.h>
 #include <pcl-1.8/pcl/point_types.h>
 #include <pcl-1.8/pcl/common/transforms.h>
@@ -24,6 +25,7 @@
 #include <pcl-1.8/pcl/filters/statistical_outlier_removal.h>
 #include <pcl-1.8/pcl/filters/radius_outlier_removal.h>
 #include <pcl-1.8/pcl/features/normal_3d_omp.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <PicoZense_api.h>
 #include "pthread.h"
@@ -47,6 +49,7 @@
 #define BOLDCYAN "\033[1m\033[36m"    /* Bold Cyan */
 #define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
 #define PCD_FILE_PATH   "/home/alecone/Documents/Università/Magistrale/Tesi/PCDs/"
+#define TEST_PATH       "/home/alecone/Documents/Università/Magistrale/Tesi/TEST_PERFORMACE/"
 
 static boost::mutex vis_mutex;
 
@@ -128,6 +131,9 @@ public:
     bool IsPointCloudRGBEnabled();
     void ShutDown();
 
+    void PerformTest();
+    void SetTestName(std::string &p_testName);
+
 private:
     //Private functions
     std::string PsStatusToString(PsReturnStatus p_status);
@@ -147,7 +153,7 @@ private:
 
     void SendToVisualizer(PointCloud<PointXYZ>::Ptr cloud_in, int32_t dev_index, boost::barrier &p_barier);
     void SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, int32_t dev_index, boost::barrier &p_barier);
-
+    void SaveDepthImage(cv::Mat p_image, std::string &info);
 
     //Provate members
     // pcl::visualization::CloudViewer *m_viewer = nullptr;
@@ -185,6 +191,9 @@ private:
     Eigen::Matrix4f transform;
     bool m_canUseTransform;
     bool m_loop;
+    int m_savedImages;
+    bool m_performTest;
+    std::string m_testName;
 };
 
 #endif // PICOZENSEHANDLER_H

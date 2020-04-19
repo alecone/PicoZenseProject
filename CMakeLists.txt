@@ -36,6 +36,7 @@ target_link_libraries(PicoZenseProject
     opencv_core
     opencv_highgui
     opencv_imgproc
+    opencv_imgcodecs
     picozense_api
     pcl_visualization
     boost_system

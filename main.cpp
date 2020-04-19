@@ -20,7 +20,8 @@ void mainMenu()
     info("1. Tweak PicoZense camera parameters\n2. Get PicoZense camera parameters");
     info("3. Toggle RGB PointCloud\n4. Toggle 'Classic B&W' PointCloud\n5. Toggle WDR PointCloud");
     info("6. Set NARF Features detections\n7. Start ICP\n8. Set allign Point Clouds");
-    info("90. Save PointCloud as pcd file\n\n99. Shut Down");
+    info("9. Set manual trasform");
+    info("80. Start test\n90. Save PointCloud as pcd file\n\n99. Shut Down");
     info("**************************************************\n");
 }
 void settersMenu()
@@ -49,6 +50,7 @@ void *userAction(void *picoZenseHandlers)
     debug("MultiCamWorker: ", picos->cams);
 
     int choice;
+    std::string testName;
     PsReturnStatus status;
     while (!stop)
     {
@@ -412,6 +414,47 @@ void *userAction(void *picoZenseHandlers)
             else
                 warn("Nothing to do, MultiCamWorker does not exist!");
             break;
+        case 9:
+            if (picos->cams != nullptr)
+            {
+                // std::cin.clear();
+                // std::cin.ignore(1024, '\n');
+                // info("Set x traslation");
+                // std::cin >> choice;
+                //Try to get the transform
+                Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
+                // From stereo fucking calibration
+                T(0, 0) = 0.9994620161631419;
+                T(0, 1) = -0.004643873026125718;
+                T(0, 2) = -0.03246710166344729;
+                T(1, 0) = 0.004781215055008394;
+                T(1, 1) = 0.9999799426209818;
+                T(0, 2) = 0.004153834172878227;
+                T(2, 0) = 0.03244716058001317;
+                T(2, 1) = -0.004306831672497989;
+                T(2, 2) = 0.9994641729302955;
+                T(0, 3) = 0.22129716386296153;
+                T(1, 3) = 0.002012280755594414;
+                T(2, 3) = 0.0026842127356713793;
+                picos->pico2->SetTransform(T);
+            }
+            else
+                warn("Nothing to do, MultiCamWorker does not exist!");
+            break;
+        case 80:
+            std::cin.clear();
+            std::cin.ignore(1024, '\n');
+            info("Insert Test Name");
+            std::cin >> testName;
+            picos->pico1->SetTestName(testName);
+            picos->pico1->PerformTest();
+            if (picos->pico2 != NULL)
+            {
+                picos->pico2->SetTestName(testName);
+                picos->pico2->PerformTest();
+            }
+            break;
+
         case 90:
             picos->pico1->SavePCD();
             if (picos->pico2 != NULL)

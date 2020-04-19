@@ -14,12 +14,12 @@ static void pointEventHandler(const pcl::visualization::PointPickingEvent &event
 static bool m_pause;
 static PointXYZ old;
 
-static int KERNEL_LENGTH = 15;  // This might be tuned
-static int KERNEL_LENGTH_BILATREL = 15; //See function explanation
+static int KERNEL_LENGTH = 7;  // This might be tuned
+static int KERNEL_LENGTH_BILATREL = 7; //See function explanation
 static double SIGMA_X = 1.0;
 static double SIGMA_Y = 1.0;
-static double SIGMA_COLOR = 50;
-static double SIGMA_SPACE = 75;
+static double SIGMA_COLOR = 0.03;
+static double SIGMA_SPACE = 0.1;
 
 PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisualizer::Ptr viewer)
 {
@@ -59,10 +59,12 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     m_polynomialReconstraction = false;
     m_fastTriangolation = false;
     transform = Eigen::Matrix4f::Identity();
+    m_savedImages = 0;
+    m_performTest = false;
     m_loop = true;
     m_pause = false;
 
-    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
+    info("Starting with:\n\tDepthRange: PsMidRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
 }
 
 
@@ -469,15 +471,15 @@ void PicoZenseHandler::SetPointCloudClassic()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        vis_mutex.lock();
-        if (m_deviceCount == 1)
-            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
-        else
-        {
-            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudSX");
-            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudDX");
-        }
-        vis_mutex.unlock();
+        // vis_mutex.lock();
+        // if (m_deviceCount == 1)
+        //     m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
+        // else
+        // {
+        //     // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudSX");
+        //     // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloudDX");
+        // }
+        // vis_mutex.unlock();
         m_pointCloudMappedRGB = false;
         m_pointCloudClassic = true;
     }
@@ -503,13 +505,13 @@ void PicoZenseHandler::SetPointCloudRGB()
         status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
         if (status != PsRetOK)
             error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        if (m_deviceCount == 1)
-            m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
-        else
-        {
-            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
-            // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
-        }
+        // if (m_deviceCount == 1)
+        //     m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
+        // else
+        // {
+        //     // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
+        //     // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
+        // }
         m_pointCloudClassic = false;
         m_pointCloudMappedRGB = true;
     }
@@ -630,6 +632,17 @@ void PicoZenseHandler::ShutDown()
     m_loop = false;
 }
 
+void PicoZenseHandler::PerformTest()
+{
+    info("Starting test ", m_testName);
+    m_performTest = true;
+}
+
+void PicoZenseHandler::SetTestName(std::string &p_testName)
+{
+    m_testName = p_testName;
+}
+
 /*  Private Functions  */
 
 std::string PicoZenseHandler::PsStatusToString(PsReturnStatus p_status)
@@ -713,19 +726,32 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         return;
     }
 
+    if (m_performTest)
+    {
+        //Acquisition for test
+        std::string s = "/home/alecone/CAMERA";
+        s.append("_");
+        s.append(std::to_string(m_deviceIndex));
+        s.append(".jpg");
+        //Save image
+        cv::imwrite(s, p_imageRGB);
+        info("Stopping test");
+        m_performTest = false;
+    }
+
     if (m_normalizedBoxFilter)
     {
-        //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
-        cv::Mat postProc = p_imageRGB.clone();
-        blur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
-        p_imageRGB = postProc;
+        //Using the median blur. Should be good enaugh for salt and pepper
+        cv::Mat postProc = p_imageDepth.clone();
+        blur(p_imageDepth, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
+        p_imageDepth = postProc;
     }
     else if (m_gaussianFilter)
     {
         //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
-        cv::Mat postProc = p_imageRGB.clone();
-        GaussianBlur(p_imageRGB, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
-        p_imageRGB = postProc;
+        cv::Mat postProc = p_imageDepth.clone();
+        GaussianBlur(p_imageDepth, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
+        p_imageDepth = postProc;
     }
     else if (m_bilateralFilter)
     {
@@ -733,9 +759,9 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         // weights assigned to each of them. These weights have two components, the first of which is the same weighting
         // used by the Gaussian filter. The second component takes into account the difference in intensity between
         // the neighboring pixels and the evaluated one. Smooth but enhance edges
-        cv::Mat postProc = p_imageRGB.clone();
-        bilateralFilter(p_imageRGB, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
-        p_imageRGB = postProc;
+        cv::Mat postProc = p_imageDepth.clone();
+        bilateralFilter(p_imageDepth, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
+        p_imageDepth = postProc;
     }
 
     pointCloudRGB->clear();
@@ -856,9 +882,37 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     if (!imageMatrix.data)
         error("No depth data");
 
+    if (m_performTest)
+    {
+        //Acquisition for test
+        std::string s = m_testName;
+        s.append("_");
+        s.append(std::to_string(m_savedImages));
+        //Crop image
+        cv::Rect roi;
+        // roi.x = 128*2;
+        // roi.y = 95*2;
+        // roi.width = 128;
+        // roi.height = 95;
+        roi.x = 213;
+        roi.y = 160;
+        roi.width = 213;
+        roi.height = 160;
+
+        cv::Mat crop = p_image(roi);
+        //Save image
+        SaveDepthImage(crop, s);
+        if(++m_savedImages == 21)
+        {
+            info("Stopping test");
+            m_performTest = false;
+            m_savedImages = 0;
+        }
+    }
+
     if (m_normalizedBoxFilter)
     {
-        //This filter is the simplest of all !Each output pixel is the mean of its kernel neighbors(all of them contribute with equal weights)
+        //Using the median blur. Should be good enaugh for salt and pepper
         cv::Mat postProc = p_image.clone();
         blur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
         p_image = postProc;
@@ -903,6 +957,17 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
 
             pointCloud->push_back(p);
         }
+    }
+
+    if(m_bilateralFilter)
+    {
+        //Trying out to make a statistacal removal with a voxel grid
+        pcl::VoxelGrid<PointXYZ> vox;
+        vox.setInputCloud(pointCloud);
+        vox.setLeafSize(0.5, 0.5, 0.005);
+        vox.setFilterLimits(-1, 1);
+        vox.setMinimumPointsNumberPerVoxel(5);
+        vox.filter(*pointCloud);
     }
 
     if (m_canUseTransform)
@@ -1337,6 +1402,15 @@ void PicoZenseHandler::SendToVisualizer(PointCloud<PointXYZRGB>::Ptr cloud_in, i
             m_visualizer->addPointCloud(cloud_in, "PointCloud");
         m_visualizer->spinOnce();
     }
+}
+
+void PicoZenseHandler::SaveDepthImage(cv::Mat p_image, std::string &info)
+{
+    std::string filename(TEST_PATH);
+    filename.append(info);
+    filename.append(".yml");
+    FileStorage file(filename, cv::FileStorage::WRITE);
+    file << info << p_image;
 }
 
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void *pico)
