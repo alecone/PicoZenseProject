@@ -211,7 +211,7 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
 
         //Get WDR depth frame(fusion or alternatively, determined by PsSetWDRStyle, default in fusion)
         //WDR depth frame only output in PsWDR_Depth data mode
-        if (m_dataMode == PsWDR_Depth)
+        if (m_dataMode == PsWDR_Depth and m_wdrDepth)
         {
             PsGetFrame(m_deviceIndex, PsWDRDepthFrame, &wdrDepthFrame);
             if (!m_pointCloudMappedRGB && wdrDepthFrame.pFrameData != NULL)
@@ -459,7 +459,8 @@ void PicoZenseHandler::SetPointCloudClassic()
     {
         if (m_wdrDepth)
         {
-            status = PsSetDataMode(m_deviceIndex, PsDepthAndRGB_30);
+            m_dataMode = PsDepthAndRGB_30;
+            status = PsSetDataMode(m_deviceIndex, m_dataMode);
             if (status != PsRetOK)
                 error("PsSetDataMode failed with error ", PsStatusToString(status));
             m_wdrDepth = false;
@@ -493,7 +494,8 @@ void PicoZenseHandler::SetPointCloudRGB()
     {
         if (m_wdrDepth)
         {
-            status = PsSetDataMode(m_deviceIndex, PsDepthAndRGB_30);
+            m_dataMode = PsDepthAndRGB_30;
+            status = PsSetDataMode(m_deviceIndex, m_dataMode);
             if (status != PsRetOK)
                 error("PsSetDataMode failed with error ", PsStatusToString(status));
             m_wdrDepth = false;
@@ -535,17 +537,17 @@ void PicoZenseHandler::SetWDRDataMode()
                 error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
             m_pointCloudMappedRGB = false;
         }
-        PsDataMode dataMode = PsWDR_Depth;
-        status = PsSetDataMode(m_deviceIndex, dataMode);
+        m_dataMode = PsWDR_Depth;
+        status = PsSetDataMode(m_deviceIndex, m_dataMode);
         if (status != PsRetOK)
             error("PsSetDataMode failed with error ", PsStatusToString(status));
-        //Set WDR Output Mode, three ranges Near/Middle/Far output from device every one frame
-        PsWDROutputMode wdrMode = {PsWDRTotalRange_Three, PsNearRange, 1, PsMidRange, 1, PsFarRange, 1};
+        //Set WDR Output Mode, three ranges Near/Far/XFar output from device every one frame
+        PsWDROutputMode wdrMode = {PsWDRTotalRange_Three, PsNearRange, 1, PsFarRange, 1, PsXFarRange, 1};
         status = PsSetWDROutputMode(m_deviceIndex, &wdrMode);
         if (status != PsRetOK)
             error("PsSetWDROutputMode failed with error ", PsStatusToString(status));
         //Set WDR fusion threshold
-        status = PsSetWDRFusionThreshold(m_deviceIndex, 1000, 2500);
+        status = PsSetWDRFusionThreshold(m_deviceIndex, 1000, 4000);
         if (status != PsRetOK)
             error("PsSetWDRFusionThreshold failed with error ", PsStatusToString(status));
         status = PsSetWDRStyle(m_deviceIndex, PsWDR_FUSION);
@@ -878,7 +880,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
 void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_image, uint8_t *p_data, PsCameraParameters params, boost::barrier &p_barier)
 {
     p_image = cv::Mat(p_height, p_width, CV_16UC1, p_data);
-    p_image.convertTo(p_image, CV_32F, 0.001); // convert image data to float type and to meters già che ci siamo
     if (!imageMatrix.data)
         error("No depth data");
 
@@ -888,27 +889,29 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         std::string s = m_testName;
         s.append("_");
         s.append(std::to_string(m_savedImages));
-        //Crop image
-        cv::Rect roi;
-        // roi.x = 128*2;
-        // roi.y = 95*2;
-        // roi.width = 128;
-        // roi.height = 95;
-        roi.x = 213;
-        roi.y = 160;
-        roi.width = 213;
-        roi.height = 160;
+        // //Crop image
+        // cv::Rect roi;
+        // // roi.x = 128*2;
+        // // roi.y = 95*2;
+        // // roi.width = 128;
+        // // roi.height = 95;
+        // roi.x = 213;
+        // roi.y = 160;
+        // roi.width = 213;
+        // roi.height = 160;
 
-        cv::Mat crop = p_image(roi);
-        //Save image
-        SaveDepthImage(crop, s);
-        if(++m_savedImages == 21)
+        // cv::Mat crop = p_image(roi);
+        // //Save crop image (used for outside pacquisition)
+        // SaveDepthImage(crop, s);
+        SaveDepthImage(p_image, s);
+        if(++m_savedImages == 20)
         {
             info("Stopping test");
             m_performTest = false;
             m_savedImages = 0;
         }
     }
+    p_image.convertTo(p_image, CV_32F, 0.001); // convert image data to float type and to meters già che ci siamo
 
     if (m_normalizedBoxFilter)
     {
@@ -1408,9 +1411,10 @@ void PicoZenseHandler::SaveDepthImage(cv::Mat p_image, std::string &info)
 {
     std::string filename(TEST_PATH);
     filename.append(info);
-    filename.append(".yml");
-    FileStorage file(filename, cv::FileStorage::WRITE);
-    file << info << p_image;
+    filename.append(".png");
+    // FileStorage file(filename, cv::FileStorage::WRITE);
+    // file << info << p_image;
+    imwrite(filename, p_image);
 }
 
 static void mouseEventHandler(const pcl::visualization::MouseEvent &event, void *pico)

@@ -358,7 +358,7 @@ void *userAction(void *picoZenseHandlers)
             }
             break;
         case 5:
-            debug("Setting POintCloud with WDR feature");
+            debug("Setting PointCloud with WDR feature");
             picos->pico1->SetWDRDataMode();
             if (picos->pico2 != NULL)
             {

@@ -49,7 +49,7 @@
 #define BOLDCYAN "\033[1m\033[36m"    /* Bold Cyan */
 #define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
 #define PCD_FILE_PATH   "/home/alecone/Documents/Università/Magistrale/Tesi/PCDs/"
-#define TEST_PATH       "/home/alecone/Documents/Università/Magistrale/Tesi/TEST_PERFORMACE/"
+#define TEST_PATH       "/home/alecone/Documents/Università/Magistrale/Tesi/DepthImages/"
 
 static boost::mutex vis_mutex;
 
