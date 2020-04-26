@@ -3,6 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <pcl-1.8/pcl/visualization/cloud_viewer.h>
 #include <pcl-1.8/pcl/point_types.h>
 #include <pcl-1.8/pcl/common/transforms.h>

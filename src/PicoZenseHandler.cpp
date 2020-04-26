@@ -200,7 +200,10 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
         //Get depth frame, depth frame only output in following data mode
         if (!m_wdrDepth && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIR_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
-            PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
+            if (m_pointCloudMappedRGB)
+                PsGetFrame(m_deviceIndex, PsMappedDepthFrame, &depthFrame);
+            else
+                PsGetFrame(m_deviceIndex, PsDepthFrame, &depthFrame);
 
             if (!m_pointCloudMappedRGB && depthFrame.pFrameData != NULL)
             {
@@ -226,7 +229,8 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
         //And can only get when the feature is enabled through api PsSetMapperEnabledDepthToRGB
         if (m_pointCloudMappedRGB && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsWDR_Depth || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
-            PsGetFrame(m_deviceIndex, PsMappedRGBFrame, &mappedRGBFrame);
+            PsGetFrame(m_deviceIndex, PsRGBFrame, &mappedRGBFrame);
+
             if (mappedRGBFrame.pFrameData != NULL)
             {
                 if (m_dataMode == PsWDR_Depth)
@@ -504,16 +508,12 @@ void PicoZenseHandler::SetPointCloudRGB()
         status = PsSetSynchronizeEnabled(m_deviceIndex, true);
         if (status != PsRetOK)
             error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
-        status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
+        // status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, true);
+        // if (status != PsRetOK)
+        //     error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+        status = PsSetMapperEnabledRGBToDepth(m_deviceIndex, true);
         if (status != PsRetOK)
-            error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
-        // if (m_deviceCount == 1)
-        //     m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloud");
-        // else
-        // {
-        //     // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudSX");
-        //     // m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "PointCloudDX");
-        // }
+            error("PsSetMapperEnabledRGBToDepth failed with error ", PsStatusToString(status));
         m_pointCloudClassic = false;
         m_pointCloudMappedRGB = true;
     }
@@ -543,6 +543,8 @@ void PicoZenseHandler::SetWDRDataMode()
             error("PsSetDataMode failed with error ", PsStatusToString(status));
         //Set WDR Output Mode, three ranges Near/Far/XFar output from device every one frame
         PsWDROutputMode wdrMode = {PsWDRTotalRange_Three, PsNearRange, 1, PsFarRange, 1, PsXFarRange, 1};
+        // PsWDROutputMode wdrMode = {PsWDRTotalRange_Two, PsNearRange, 1, PsFarRange, 1};
+
         status = PsSetWDROutputMode(m_deviceIndex, &wdrMode);
         if (status != PsRetOK)
             error("PsSetWDROutputMode failed with error ", PsStatusToString(status));
@@ -721,7 +723,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
     p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
     
-    p_imageDepth.convertTo(p_imageDepth, CV_32F, 0.001); // convert depth image data to float type and to meters già che ci siamo
     if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
     {
         error("Images with different sizes!!!");
@@ -730,16 +731,18 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
 
     if (m_performTest)
     {
-        //Acquisition for test
-        std::string s = "/home/alecone/CAMERA";
+        std::string s = m_testName;
         s.append("_");
-        s.append(std::to_string(m_deviceIndex));
-        s.append(".jpg");
-        //Save image
-        cv::imwrite(s, p_imageRGB);
-        info("Stopping test");
+        s.append("COLOR");
+        SaveDepthImage(p_imageRGB, s);
+        s = m_testName;
+        s.append("_");
+        s.append("DEPTH");
+        SaveDepthImage(p_imageDepth, s);
         m_performTest = false;
     }
+    p_imageDepth.convertTo(p_imageDepth, CV_32F, 0.001); // convert depth image data to float type and to meters già che ci siamo
+
 
     if (m_normalizedBoxFilter)
     {
