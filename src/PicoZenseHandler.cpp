@@ -1,4 +1,5 @@
 #include "PicoZenseHandler.h"
+#include "filters/filter.h"
 
 
 using namespace std;
@@ -37,7 +38,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     q.z() = 0 * sin(angle / 2);
     q.w() = 1 * std::cos(angle / 2);
     m_deviceIndex = devIndex;
-    m_depthRange = PsMidRange;
+    m_depthRange = PsNearRange;
     m_dataMode = PsDepthAndRGB_30;
     m_pointCloudClassic = true;
     m_wdrDepth = false;
@@ -64,7 +65,7 @@ PicoZenseHandler::PicoZenseHandler(int32_t devIndex, pcl::visualization::PCLVisu
     m_loop = true;
     m_pause = false;
 
-    info("Starting with:\n\tDepthRange: PsMidRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
+    info("Starting with:\n\tDepthRange: PsNearRange\n\tm_dataMode: PsDepthAndRGB_30\n\tPixelFormat: PsPixelFormatRGB888\nDevice #", std::to_string(m_deviceIndex));
 }
 
 
@@ -230,7 +231,24 @@ void *PicoZenseHandler::Visualize(boost::barrier &p_barier)
         if (m_pointCloudMappedRGB && (m_dataMode == PsDepthAndRGB_30 || m_dataMode == PsDepthAndIRAndRGB_30 || m_dataMode == PsWDR_Depth || m_dataMode == PsDepthAndIR_15_RGB_30))
         {
             PsGetFrame(m_deviceIndex, PsRGBFrame, &mappedRGBFrame);
-
+            // PsFrame irFrame = {0};
+            // PsGetFrame(m_deviceIndex, PsIRFrame, &irFrame);
+            // cv::Mat irMat = cv::Mat(irFrame.height, irFrame.width, CV_16UC1, irFrame.pFrameData);
+            // irMat.convertTo(irMat, CV_8U, 255.0 / 3840); // Qui sarebbe meglio usare il min/max
+            // imwrite("/home/alecone/Desktop/IR.png", irMat);
+            // warn("Saved ir image");
+            // cv::Mat depthMat = cv::Mat(depthFrame.height, depthFrame.width, CV_16UC1, depthFrame.pFrameData);
+            // imwrite("/home/alecone/Desktop/DEPTH.png", depthMat);
+            // sleep(5);
+            // exit(0);
+            // uint32_t slope = 1450;
+            // cv::Mat depth = cv::Mat(depthFrame.height, depthFrame.width, CV_16UC1, depthFrame.pFrameData);
+            // depth.convertTo(depth, CV_8U, 255.0 / slope);
+            // applyColorMap(depth, depth, cv::COLORMAP_RAINBOW);
+            // imwrite("/home/alecone/Desktop/DEPTH.png", depth);
+            // warn("Saved DEPTH image");
+            // sleep(5);
+            // exit(0);
             if (mappedRGBFrame.pFrameData != NULL)
             {
                 if (m_dataMode == PsWDR_Depth)
@@ -473,9 +491,9 @@ void PicoZenseHandler::SetPointCloudClassic()
         status = PsSetSynchronizeEnabled(m_deviceIndex, false);
         if (status != PsRetOK)
             error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
-        status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
+        status = PsSetMapperEnabledRGBToDepth(m_deviceIndex, false);
         if (status != PsRetOK)
-            error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+            error("PsSetMapperEnabledRGBToDepth failed with error ", PsStatusToString(status));
         // vis_mutex.lock();
         // if (m_deviceCount == 1)
         //     m_visualizer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "PointCloud");
@@ -532,9 +550,9 @@ void PicoZenseHandler::SetWDRDataMode()
             status = PsSetSynchronizeEnabled(m_deviceIndex, false);
             if (status != PsRetOK)
                 error("PsSetSynchronizeEnabled failed with error ", PsStatusToString(status));
-            status = PsSetMapperEnabledDepthToRGB(m_deviceIndex, false);
+            status = PsSetMapperEnabledRGBToDepth(m_deviceIndex, false);
             if (status != PsRetOK)
-                error("PsSetMapperEnabledDepthToRGB failed with error ", PsStatusToString(status));
+                error("PsSetMapperEnabledRGBToDepth failed with error ", PsStatusToString(status));
             m_pointCloudMappedRGB = false;
         }
         m_dataMode = PsWDR_Depth;
@@ -542,8 +560,8 @@ void PicoZenseHandler::SetWDRDataMode()
         if (status != PsRetOK)
             error("PsSetDataMode failed with error ", PsStatusToString(status));
         //Set WDR Output Mode, three ranges Near/Far/XFar output from device every one frame
-        PsWDROutputMode wdrMode = {PsWDRTotalRange_Three, PsNearRange, 1, PsFarRange, 1, PsXFarRange, 1};
-        // PsWDROutputMode wdrMode = {PsWDRTotalRange_Two, PsNearRange, 1, PsFarRange, 1};
+        // PsWDROutputMode wdrMode = {PsWDRTotalRange_Three, PsNearRange, 1, PsFarRange, 1, PsXFarRange, 1};
+        PsWDROutputMode wdrMode = {PsWDRTotalRange_Two, PsNearRange, 1, PsFarRange, 1};
 
         status = PsSetWDROutputMode(m_deviceIndex, &wdrMode);
         if (status != PsRetOK)
@@ -722,11 +740,34 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
 {
     p_imageRGB = cv::Mat(p_height, p_width, CV_8UC3, p_dataRGB);
     p_imageDepth = cv::Mat(p_height, p_width, CV_16UC1, p_dataDepth);
-    
+
     if (p_imageDepth.cols != p_imageRGB.cols && p_imageDepth.rows != p_imageRGB.rows)
     {
         error("Images with different sizes!!!");
         return;
+    }
+    // Shift color image -> Sembra migliorare 
+    cv::Mat trans_mat = (cv::Mat_<double>(2, 3) << 1, 0, 10, 0, 1, 0);
+    warpAffine(p_imageRGB, p_imageRGB, trans_mat, p_imageRGB.size());
+    if (m_bilateralFilter)
+    {
+        // Hole Fill -> The gray image could also be the IR frame
+        Mat srcImageGray;
+        cvtColor(p_imageRGB, srcImageGray, CV_BGR2GRAY);
+        Mat srcImagef;
+        srcImageGray.convertTo(srcImagef, CV_32F);
+        for (int i = 0; i < 5; i++)
+            jointColorDepthFillOcclusion(p_imageDepth, srcImageGray, p_imageDepth, Size(7, 7), 50);
+        // Remove Streaking Noise
+        removeStreakingNoise(p_imageDepth, p_imageDepth, 5);
+        Mat preFilter = p_imageDepth.clone();
+        // JBF
+        p_imageDepth.convertTo(p_imageDepth, CV_32F);
+        Mat filteredDepthf = Mat::ones(p_imageDepth.size(), CV_32F);
+        jointBilateralFilter(p_imageDepth, srcImagef, filteredDepthf, Size(7, 7), 5, 5, BILATERAL_SEPARABLE);
+        filteredDepthf.convertTo(p_imageDepth, CV_16U);
+        // SDCF
+        jointNearestFilter(p_imageDepth, preFilter, Size(5, 5), p_imageDepth);
     }
 
     if (m_performTest)
@@ -734,7 +775,11 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         std::string s = m_testName;
         s.append("_");
         s.append("COLOR");
-        SaveDepthImage(p_imageRGB, s);
+        std::string filename(TEST_PATH);
+        filename.append(s);
+        filename.append(".png");
+        cv::cvtColor(p_imageRGB, p_imageRGB, CV_RGB2BGR);
+        imwrite(filename, p_imageRGB);
         s = m_testName;
         s.append("_");
         s.append("DEPTH");
@@ -743,31 +788,6 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
     }
     p_imageDepth.convertTo(p_imageDepth, CV_32F, 0.001); // convert depth image data to float type and to meters già che ci siamo
 
-
-    if (m_normalizedBoxFilter)
-    {
-        //Using the median blur. Should be good enaugh for salt and pepper
-        cv::Mat postProc = p_imageDepth.clone();
-        blur(p_imageDepth, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
-        p_imageDepth = postProc;
-    }
-    else if (m_gaussianFilter)
-    {
-        //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
-        cv::Mat postProc = p_imageDepth.clone();
-        GaussianBlur(p_imageDepth, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
-        p_imageDepth = postProc;
-    }
-    else if (m_bilateralFilter)
-    {
-        // In an analogous way as the Gaussian filter, the bilateral filter also considers the neighboring pixels with
-        // weights assigned to each of them. These weights have two components, the first of which is the same weighting
-        // used by the Gaussian filter. The second component takes into account the difference in intensity between
-        // the neighboring pixels and the evaluated one. Smooth but enhance edges
-        cv::Mat postProc = p_imageDepth.clone();
-        bilateralFilter(p_imageDepth, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
-        p_imageDepth = postProc;
-    }
 
     pointCloudRGB->clear();
     if (m_bilateralUpsampling)
@@ -790,8 +810,8 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
             p.g = intensity.val[1];
             p.b = intensity.val[2];
             p.z = p_imageDepth.at<float>(v, u);
-            p.x = (u - (float)params.cx) * p.z / (float)params.fx;
-            p.y = (v - (float)params.cy) * p.z / (float)params.fy;
+            p.x = (v - (float)params.cx) * p.z / (float)params.fx;
+            p.y = (u - (float)params.cy) * p.z / (float)params.fy;
 
             if (m_bilateralUpsampling)
             {
@@ -821,17 +841,8 @@ void PicoZenseHandler::PointCloudCreatorXYZRGB(int p_height, int p_width, Mat &p
         m_save = false;
     }
 
-    if (m_bilateralUpsampling && pointCloudRGB->isOrganized())
-    {
-        pointCloudRGB = ApplyBilateralUpsampling(pointCloudRGB);
-    }
-    else
-    {
-        //Can keep it unorganized (1-D indexing)
-        //Note that using push_back it will break the organized structure in unorganized
-        pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
-        pointCloudRGB->height = 1;
-    }
+    pointCloudRGB->width = (uint32_t)pointCloudRGB->points.size();
+    pointCloudRGB->height = 1;
 
     if (m_stattisticalOutlierRemoval)
     {
@@ -886,6 +897,9 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     if (!imageMatrix.data)
         error("No depth data");
 
+    bilateralFilter(p_image, p_image, Size(7, 7), 116, 7);
+    removeStreakingNoise(p_image, p_image, 5);
+
     if (m_performTest)
     {
         //Acquisition for test
@@ -916,40 +930,8 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
     }
     p_image.convertTo(p_image, CV_32F, 0.001); // convert image data to float type and to meters già che ci siamo
 
-    if (m_normalizedBoxFilter)
-    {
-        //Using the median blur. Should be good enaugh for salt and pepper
-        cv::Mat postProc = p_image.clone();
-        blur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), Point(-1, -1));
-        p_image = postProc;
-    }
-    else if (m_gaussianFilter)
-    {
-        //Gaussian filtering is done by convolving each point in the input array with a Gaussian kernel and then summing them all to produce the output array.
-        cv::Mat postProc = p_image.clone();
-        GaussianBlur(p_image, postProc, Size(KERNEL_LENGTH, KERNEL_LENGTH), SIGMA_X, SIGMA_Y);
-        p_image = postProc;
-    }
-    else if (m_bilateralFilter)
-    {
-        // In an analogous way as the Gaussian filter, the bilateral filter also considers the neighboring pixels with
-        // weights assigned to each of them. These weights have two components, the first of which is the same weighting
-        // used by the Gaussian filter. The second component takes into account the difference in intensity between
-        // the neighboring pixels and the evaluated one. Smooth but enhance edges
-        cv::Mat postProc = p_image.clone();
-        bilateralFilter(p_image, postProc, KERNEL_LENGTH_BILATREL, SIGMA_COLOR, SIGMA_SPACE);
-        p_image = postProc;
-    }
 
     pointCloud->clear();
-
-    //Getting the world's points coordinate from the image relying on
-    //Perspective projection using homogeneous coordinates.
-    //Given a real world point as (X,Y,Z) the camera will retrieve
-    //the the pixel points (2D:u,v) such as u=X*f/Z and v=Y*f/Z
-    //As the depth camera stores inside each frame pixel (u,v) camera coords
-    //the Z value I'll calculate the (x, y) pair according to the camera sys coord.
-    //N.B. I'm taking into account also the pixelization process of objects
 
     for (int v = 0; v < p_image.rows; v += 1)
     {
@@ -965,35 +947,12 @@ void PicoZenseHandler::PointCloudCreatorXYZ(int p_height, int p_width, Mat &p_im
         }
     }
 
-    if(m_bilateralFilter)
-    {
-        //Trying out to make a statistacal removal with a voxel grid
-        pcl::VoxelGrid<PointXYZ> vox;
-        vox.setInputCloud(pointCloud);
-        vox.setLeafSize(0.5, 0.5, 0.005);
-        vox.setFilterLimits(-1, 1);
-        vox.setMinimumPointsNumberPerVoxel(5);
-        vox.filter(*pointCloud);
-    }
-
     if (m_canUseTransform)
         transformPointCloud(*pointCloud, *pointCloud, transform);
 
-    if(m_fastBiFilter)
-    {
-        //Dimension must be initialized to use 2-D indexing
-        //so will have Pointcloud organized in order to apply the bilateral Filter
-        pointCloud->width = p_width;
-        pointCloud->height = p_height;
-        pointCloud->resize(p_width * p_height);
-        pointCloud = ApplyBilateralFilter(pointCloud);
-    }
-    else
-    {
-        // Keep it unorganized so 1-D indexing
-        pointCloud->width = (uint32_t)pointCloud->points.size();
-        pointCloud->height = 1;
-    }
+    // Keep it unorganized so 1-D indexing
+    pointCloud->width = (uint32_t)pointCloud->points.size();
+    pointCloud->height = 1;
 
     if (m_save)
     {

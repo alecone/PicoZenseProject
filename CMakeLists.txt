@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 project(PicoZenseProject VERSION 1.0.0)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.1")
 
 # include(CTest)
 # enable_testing()
@@ -19,6 +20,13 @@ add_executable(PicoZenseProject
     inc/MultiCamWorker.h
     src/PicoZenseHandler.cpp
     src/MultiCamWorker.cpp
+    filters/filter.h 
+    filters/bilateralFilter.cpp 
+    filters/depthFilter.cpp
+    filters/jointBilateralFilter.cpp 
+    filters/jointNearest.cpp 
+    filters/trilateralFilter.cpp
+    filters/split.cpp
     src/main.cpp
 )
 include_directories(
